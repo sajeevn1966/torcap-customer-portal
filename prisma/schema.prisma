@@ -1,0 +1,696 @@
+// ─────────────────────────────────────────────────────────────────────────
+// Prisma schema for the TORCAP Scheme module + Transactions page.
+//
+// This schema was hand-authored to match the CREATE TABLE statements found
+// in the provided pg_dump (amtur_16082026.sql). It covers:
+//   - the six core Scheme-module tables
+//   - branch / currency, so every amount renders in its real branch currency
+//     instead of a hardcoded symbol
+//   - item, pos_invoice(+line_item/+payment_detail), and
+//     old_jewellery_purchase(+line_item/+payment_detail), added for the
+//     Transactions page's "Retail Sale" and "Old Gold Purchase" tabs
+// Only the columns this app actually reads are modeled for the
+// non-core tables; run `db pull` if you need the rest of their columns too.
+// It intentionally does NOT include `datasource { ... }` migrations
+// that would recreate or alter your existing database.
+//
+// Recommended workflow against your real database (see README.md):
+//   1. Set DATABASE_URL in .env to point at the existing TORCAP Postgres DB.
+//   2. Run `npx prisma db pull` to introspect the live schema. This will
+//      regenerate this file from the actual database and will also pick up
+//      every other table in the full dump. See README §2 for the caveat
+//      about running this against the whole database (naming collisions on
+//      unrelated tables) before doing this again.
+//   3. Diff the pulled schema against this hand-authored one — they should
+//      match for the models below. Keep any extra tables Prisma adds.
+//   4. Run `npx prisma generate` to build the client.
+//
+// Do NOT run `prisma migrate dev` against the production TORCAP database —
+// that workflow is for schemas Prisma owns. Since this database already
+// exists, use `db pull` (introspection) plus hand-written, reviewed SQL
+// migrations for any future schema changes.
+// ─────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── branch / currency ───────────────────────────────────────────────────
+// Added so the app can display each amount in its OWN branch's currency
+// instead of a hardcoded symbol. Confirmed against the real dump:
+// branch.currency_id -> currency.id, currency.code holds the ISO code
+// (e.g. "SAR", "AED", "USD"). Only the columns this app actually reads are
+// modeled — run `prisma db pull` to fill in the rest if you need them.
+// A deliberately PARTIAL model of the real `company` table (68 columns in
+// the live DB — verified via `\d company`, 2026-10-15). Only the columns
+// this portal actually reads are modeled; Prisma is fine with that for a
+// read-only mapping, it just means any column not listed here is simply
+// invisible to this app, not deleted or altered. Single-row table (the
+// whole business's settings), confirmed via `SELECT COUNT(*) FROM company`
+// = 1, so callers use `findFirst()` rather than a specific id.
+model Company {
+  id BigInt @id @default(autoincrement())
+
+  whatsappProvider            String?  @map("whatsapp_provider") @db.VarChar(50)
+  whatsappApiUrl               String?  @map("whatsapp_api_url") @db.VarChar(255)
+  whatsappUsername             String?  @map("whatsapp_username") @db.VarChar(255)
+  whatsappApiPassword          String?  @map("whatsapp_api_password") @db.VarChar(255)
+  whatsappSender                String?  @map("whatsapp_sender") @db.VarChar(50)
+  whatsappPriority              String?  @map("whatsapp_priority") @db.VarChar(10)
+  whatsappTimeoutSeconds        Int?     @map("whatsapp_timeout_seconds")
+  whatsappIntegrationEnabled    Boolean  @default(true) @map("whatsapp_integration_enabled")
+
+  schemeCancellationOtpRequired Boolean @default(true) @map("scheme_cancellation_otp_required")
+  schemeRegistrationOtpRequired Boolean @default(true) @map("scheme_registration_otp_required")
+  schemeRedemptionOtpRequired   Boolean @default(true) @map("scheme_redemption_otp_required")
+
+  isDeleted Boolean @default(false) @map("is_deleted")
+
+  @@map("company")
+}
+
+model Currency {
+  id          BigInt  @id @default(autoincrement())
+  code        String? @db.VarChar(255) // e.g. "SAR"
+  symbol      String? @db.VarChar(255)
+  description String? @db.VarChar(255)
+
+  branches Branch[]
+  payments SchemeReceiptPaymentDetail[]
+  posInvoices PosInvoice[]
+  posInvoicePayments PosInvoicePaymentDetail[]
+  oldJewelleryPurchases OldJewelleryPurchase[]
+  oldJewelleryPurchasePayments OldJewelleryPurchasePaymentDetail[]
+  retailSalesOrderPayments RetailSalesOrderPaymentDetail[]
+  advanceReceiptPayments AdvanceReceiptPaymentDetail[]
+
+  @@map("currency")
+}
+
+model Branch {
+  id         BigInt  @id @default(autoincrement())
+  code       String? @db.VarChar(255)
+  name       String? @db.VarChar(255)
+  currencyId BigInt? @map("currency_id")
+
+  currency      Currency?                     @relation(fields: [currencyId], references: [id])
+  customers     PosCustomer[]
+  registrations SchemeCustomerRegistration[]
+  receipts      SchemeReceipt[]
+  posInvoices   PosInvoice[]
+  oldJewelleryPurchases OldJewelleryPurchase[]
+  retailSalesOrders RetailSalesOrder[]
+  advanceReceipts AdvanceReceipt[]
+  advanceReceiptTransactions AdvanceReceiptTransaction[]
+
+  @@map("branch")
+}
+
+// ── item ─────────────────────────────────────────────────────────────────
+// Used only to classify a sold/purchased line item as Diamond, Gold, or
+// Silver for the Transactions display. Confirmed against the real dump:
+// item.main_division holds "DIAMOND" or "METAL"; item.division holds
+// "GOLD" / "SILVER" / "SERVICE CHARGES" (populated mainly for metal items).
+// Diamond is read from main_division since stone_type_id is unused in the
+// sample data. Only these classification + display columns are modeled.
+model Item {
+  id           BigInt  @id @default(autoincrement())
+  division     String? @db.VarChar(255) // "GOLD" | "SILVER" | "SERVICE CHARGES" | null
+  mainDivision String? @map("main_division") @db.VarChar(25) // "DIAMOND" | "METAL" | null
+  description  String? @db.VarChar(255)
+
+  invoiceLineItems              PosInvoiceLineItem[]
+  oldJewelleryPurchaseLineItems OldJewelleryPurchaseLineItem[]
+  retailSalesOrderLineItems     RetailSalesOrderLineItem[]
+
+  @@map("item")
+}
+
+// ── pos_customer ────────────────────────────────────────────────────────
+model PosCustomer {
+  id                        BigInt    @id @default(autoincrement())
+  code                      String?   @db.VarChar(255)
+  name                      String?   @db.VarChar(255)
+  mobile                    String?   @db.VarChar(255)
+  whatsappNumber            String?   @map("whatsapp_number") @db.VarChar(255) // UNVERIFIED — not found in the reference dump; confirm column name against your live DB (see README §10)
+  email                     String?   @db.VarChar(255)
+  idCardType                String?   @map("id_card_type") @db.VarChar(255)
+  idCardNumber              String?   @map("id_card_number") @db.VarChar(255)
+  address                   String?   @db.VarChar(255)
+  zipcode                   String?   @db.VarChar(255)
+  stateId                   BigInt?   @map("state_id")
+  cityId                    BigInt?   @map("city_id")
+  branchId                  BigInt?   @map("branch_id")
+  countryId                 BigInt?   @map("country_id")
+  createdBy                 String?   @map("created_by") @db.VarChar(50)
+  createdDate               DateTime? @map("created_date")
+  lastModifiedBy             String?   @map("last_modified_by") @db.VarChar(50)
+  lastModifiedDate            DateTime? @map("last_modified_date")
+  isDeleted                 Boolean   @default(false) @map("is_deleted")
+  countryCode               String?   @map("country_code") @db.VarChar(10)
+  vatNumber                 String?   @map("vat_number") @db.VarChar(255)
+  nationalityId              BigInt?   @map("nationality_id")
+  externalReferenceId          Int?      @map("external_reference_id")
+  dateOfBirth                DateTime? @map("date_of_birth") @db.Date
+  documentIssuingCountryId       BigInt?   @map("document_issuing_country_id")
+  language                  String?   @default("en") @db.VarChar(255)
+
+  registrations SchemeCustomerRegistration[]
+  receipts      SchemeReceipt[]
+  branch        Branch?                       @relation(fields: [branchId], references: [id])
+  posInvoices             PosInvoice[]
+  oldJewelleryPurchases   OldJewelleryPurchase[]
+  retailSalesOrders       RetailSalesOrder[]
+  advanceReceipts         AdvanceReceipt[]
+  state                   State?                  @relation(fields: [stateId], references: [id])
+  city                    City?                   @relation(fields: [cityId], references: [id])
+  country                 Country?                @relation("CustomerCountry", fields: [countryId], references: [id])
+  nationality             Country?                @relation("CustomerNationality", fields: [nationalityId], references: [id])
+  documentIssuingCountry  Country?                @relation("CustomerDocumentIssuingCountry", fields: [documentIssuingCountryId], references: [id])
+
+  @@map("pos_customer")
+}
+
+// ── scheme ───────────────────────────────────────────────────────────────
+model Scheme {
+  id                          BigInt    @id @default(autoincrement())
+  schemeId                     String?   @map("scheme_id") @db.VarChar(255)
+  name                        String    @db.VarChar(50)
+  type                        String    @db.VarChar(50)
+  schemeValidity                Int?      @map("scheme_validity")
+  paymentMode                  String    @map("payment_mode") @db.VarChar(50)
+  noOfInstallments               Int       @map("no_of_installments")
+  installmentAmount              Float     @map("installment_amount")
+  isFixed                      Boolean   @default(false) @map("is_fixed")
+  isInstallmentBonus              Boolean   @default(false) @map("is_installment_bonus")
+  bonusType                    String?   @map("bonus_type") @db.VarChar(50)
+  bonusPercentage                Float?    @map("bonus_percentage")
+  bonusValue                   Float?    @map("bonus_value")
+  isFixMetal                   Boolean   @default(false) @map("is_fix_metal")
+  isExtraBonusOnMaturity            Boolean   @default(false) @map("is_extra_bonus_on_maturity")
+  maturityBonusType               String?   @map("maturity_bonus_type") @db.VarChar(50)
+  preMatureBonus                 String?   @map("pre_mature_bonus") @db.VarChar(50)
+  maturityBonusValue              Float?    @map("maturity_bonus_value")
+  schemeControlAccountId            BigInt?   @map("scheme_control_account_id")
+  schemeAdvanceAccountId            BigInt?   @map("scheme_advance_account_id")
+  isActive                     Boolean   @default(true) @map("is_active")
+  delayAllowedForInstallment          Int?      @map("delay_allowed_for_installment")
+  isBonusOnDelayedInstallment          Boolean   @default(false) @map("is_bonus_on_delayed_installment")
+  fixWithLesserMetalRate            Boolean   @default(false) @map("fix_with_lesser_metal_rate")
+  allowPreMatureClosing             Boolean   @default(false) @map("allow_pre_mature_closing")
+  createdBy                    String?   @map("created_by") @db.VarChar(50)
+  createdDate                   DateTime? @map("created_date")
+  lastModifiedBy                 String?   @map("last_modified_by") @db.VarChar(50)
+  lastModifiedDate                DateTime? @map("last_modified_date")
+  isDeleted                    Boolean?  @default(false) @map("is_deleted")
+  additionalPaymentMultiple           Float?    @default(0) @map("additional_payment_multiple")
+  schemeMcDiscountAccountId           BigInt?   @map("scheme_mc_discount_account_id")
+
+  registrations SchemeCustomerRegistration[]
+  lineItems     SchemeReceiptLineItem[]
+
+  @@map("scheme")
+}
+
+// ── scheme_customer_registration ───────────────────────────────────────
+model SchemeCustomerRegistration {
+  id                     BigInt    @id @default(autoincrement())
+  customerId              BigInt    @map("customer_id")
+  schemeId               BigInt    @map("scheme_id")
+  registrationNumber          String?   @map("registration_number") @db.VarChar(255)
+  registrationDate           DateTime? @map("registration_date") @db.Date
+  firstInstallmentDate         DateTime? @map("first_installment_date") @db.Date
+  finalInstallmentDueDate       DateTime? @map("final_installment_due_date") @db.Date
+  branchId               BigInt?   @map("branch_id")
+  salesPersonId             BigInt?   @map("sales_person_id")
+  noOfInstallmentsPaid        Int?      @map("no_of_installments_paid")
+  totalPaidAmount            Float?    @map("total_paid_amount")
+  totalFixedWeight            Float?    @map("total_fixed_weight")
+  bonusWeightFixed            Float?    @map("bonus_weight_fixed")
+  createdBy               String?   @map("created_by") @db.VarChar(50)
+  createdDate              DateTime? @map("created_date")
+  lastModifiedBy             String?   @map("last_modified_by") @db.VarChar(50)
+  lastModifiedDate            DateTime? @map("last_modified_date")
+  isDeleted               Boolean   @default(false) @map("is_deleted")
+  financialYear             BigInt?   @map("financial_year")
+  isCancelled              Boolean?  @default(false) @map("is_cancelled")
+  totalBonus               Float     @default(0) @map("total_bonus")
+  openingAmount             Float?    @map("opening_amount")
+  openingWeight             Float?    @map("opening_weight")
+  redeemedOn               DateTime? @map("redeemed_on") @db.Date
+  karatId                 BigInt?   @map("karat_id")
+  redeemedPosInvoiceId         BigInt?   @map("redeemed_pos_invoice_id")
+  status                 String    @default("ACTIVE") @db.VarChar(20)
+
+  customer  PosCustomer             @relation(fields: [customerId], references: [id])
+  scheme    Scheme                  @relation(fields: [schemeId], references: [id])
+  lineItems SchemeReceiptLineItem[]
+  branch    Branch?                 @relation(fields: [branchId], references: [id])
+  salesPerson SalesPerson?          @relation(fields: [salesPersonId], references: [id])
+
+  @@map("scheme_customer_registration")
+}
+
+// ── scheme_receipt ─────────────────────────────────────────────────────
+model SchemeReceipt {
+  id                BigInt    @id @default(autoincrement())
+  voucherNo           String    @map("voucher_no") @db.VarChar(255)
+  voucherDate          DateTime  @map("voucher_date") @db.Date
+  customerId           BigInt    @map("customer_id")
+  amount             Float?
+  metalRate            Float?    @map("metal_rate")
+  createdBy            String?   @map("created_by") @db.VarChar(50)
+  createdDate           DateTime? @map("created_date")
+  lastModifiedBy         String?   @map("last_modified_by") @db.VarChar(50)
+  lastModifiedDate        DateTime? @map("last_modified_date")
+  isDeleted            Boolean   @default(false) @map("is_deleted")
+  remarks             String?   @db.VarChar(500)
+  voucherTypeId          BigInt?   @map("voucher_type_id")
+  branchId             BigInt    @map("branch_id")
+  financialYear          BigInt    @map("financial_year")
+  divisionId            BigInt?   @map("division_id")
+  metalRateTypeId         BigInt?   @map("metal_rate_type_id")
+  pdfUrl              String?   @map("pdf_url") @db.VarChar(500)
+  fixedWeight           Float?    @map("fixed_weight")
+  karatId             BigInt?   @map("karat_id")
+
+  customer        PosCustomer                  @relation(fields: [customerId], references: [id])
+  lineItems       SchemeReceiptLineItem[]
+  paymentDetails      SchemeReceiptPaymentDetail[]
+  branch          Branch                       @relation(fields: [branchId], references: [id])
+
+  @@map("scheme_receipt")
+}
+
+// ── scheme_receipt_line_item ───────────────────────────────────────────
+model SchemeReceiptLineItem {
+  id                   BigInt    @id @default(autoincrement())
+  schemeId               BigInt?   @map("scheme_id")
+  registrationId            BigInt?   @map("registration_id")
+  amount                Float?
+  bonusValue              Float?    @map("bonus_value")
+  fixedMetalWeight           Float?    @map("fixed_metal_weight")
+  bonusMetalWeight           Float?    @map("bonus_metal_weight")
+  totalValue              Float?    @map("total_value")
+  totalFixedWeight           Float?    @map("total_fixed_weight")
+  remarks                String?   @db.VarChar(255)
+  metalRate               Float?    @map("metal_rate")
+  bonusPercentage            Float?    @map("bonus_percentage")
+  nowPayingInstallments        Int?      @map("now_paying_installments")
+  totalInstallments           Int?      @map("total_installments")
+  paidInstallments            Int?      @map("paid_installments")
+  extraPaid               Float?    @map("extra_paid")
+  schemeReceiptId            BigInt    @map("scheme_receipt_id")
+  createdBy               String?   @map("created_by") @db.VarChar(50)
+  createdDate              DateTime? @map("created_date")
+  lastModifiedBy             String?   @map("last_modified_by") @db.VarChar(50)
+  lastModifiedDate            DateTime? @map("last_modified_date")
+  isDeleted               Boolean?  @map("is_deleted")
+  extraBonus              Float?    @default(0) @map("extra_bonus")
+  extraBonusWeight            Float?    @default(0) @map("extra_bonus_weight")
+  installmentStatus           String?   @map("installment_status") @db.VarChar(100)
+
+  scheme       Scheme?                     @relation(fields: [schemeId], references: [id])
+  registration SchemeCustomerRegistration? @relation(fields: [registrationId], references: [id])
+  receipt      SchemeReceipt               @relation(fields: [schemeReceiptId], references: [id])
+
+  @@map("scheme_receipt_line_item")
+}
+
+// ── scheme_receipt_payment_detail ──────────────────────────────────────
+model SchemeReceiptPaymentDetail {
+  id               BigInt    @id @default(autoincrement())
+  amount             Float?
+  referenceNumber        String?   @map("reference_number") @db.VarChar(100)
+  rate              Float?
+  lcAmount            Float?    @map("lc_amount")
+  schemeReceiptId        BigInt    @map("scheme_receipt_id")
+  paymentModeId         BigInt    @map("payment_mode_id")
+  currencyId           BigInt?   @map("currency_id")
+  createdBy            String?   @map("created_by") @db.VarChar(50)
+  createdDate           DateTime? @map("created_date")
+  lastModifiedBy         String?   @map("last_modified_by") @db.VarChar(50)
+  lastModifiedDate        DateTime? @map("last_modified_date")
+  isDeleted            Boolean?  @map("is_deleted")
+
+  receipt SchemeReceipt @relation(fields: [schemeReceiptId], references: [id])
+  currency Currency?    @relation(fields: [currencyId], references: [id])
+
+  @@map("scheme_receipt_payment_detail")
+}
+
+// ── pos_invoice (Retail Sale) ───────────────────────────────────────────
+// Added for the Transactions page's "Retail Sale" section. Only the
+// columns this app reads are modeled — run `db pull` for the rest.
+model PosInvoice {
+  id            BigInt    @id @default(autoincrement())
+  invoiceNumber String?   @map("invoice_number") @db.VarChar(255)
+  invoiceDate   DateTime? @map("invoice_date") @db.Date
+  status        String?   @db.VarChar(255)
+  grossAmount   Float?    @map("gross_amount")
+  discountAmount Float?   @map("discount_amount")
+  taxAmount     Float?    @map("tax_amount")
+  netAmount     Float?    @map("net_amount")
+  grandTotal    Float?    @map("grand_total")
+  paidAmount    Float?    @map("paid_amount")
+  remarks       String?   @db.VarChar(255)
+  branchId      BigInt?   @map("branch_id")
+  posCustomerId BigInt?   @map("pos_customer_id")
+  currencyId    BigInt?   @map("currency_id")
+  salesPersonId BigInt?   @map("sales_person_id")
+  isDeleted     Boolean   @default(false) @map("is_deleted")
+  isReturn      Boolean?  @default(false) @map("is_return")
+  grossWeight   Float?    @map("gross_weight")
+  netWeight     Float?    @map("net_weight")
+  stoneWeight   Float?    @map("stone_weight")
+  createdDate   DateTime? @map("created_date")
+
+  customer    PosCustomer?              @relation(fields: [posCustomerId], references: [id])
+  branch      Branch?                   @relation(fields: [branchId], references: [id])
+  currency    Currency?                 @relation(fields: [currencyId], references: [id])
+  salesPerson SalesPerson?              @relation(fields: [salesPersonId], references: [id])
+  lineItems   PosInvoiceLineItem[]
+  payments    PosInvoicePaymentDetail[]
+
+  @@map("pos_invoice")
+}
+
+model PosInvoiceLineItem {
+  id           BigInt  @id @default(autoincrement())
+  posInvoiceId BigInt? @map("pos_invoice_id")
+  itemId       BigInt? @map("item_id")
+  code         String? @db.VarChar(255)
+  description  String? @db.VarChar(255)
+  weight       Float?
+  netWeight    Float?  @map("net_weight")
+  grossWeight  Float?  @map("gross_weight")
+  stoneWeight  Float?  @map("stone_weight")
+  pieces       Float?
+  quantityInPieces Float @default(1) @map("quantity_in_pieces")
+  amount       Float?
+  totalAmount  Float?  @map("total_amount")
+  isDeleted    Boolean @default(false) @map("is_deleted")
+
+  invoice PosInvoice? @relation(fields: [posInvoiceId], references: [id])
+  item    Item?       @relation(fields: [itemId], references: [id])
+
+  @@map("pos_invoice_line_item")
+}
+
+model PosInvoicePaymentDetail {
+  id            BigInt  @id @default(autoincrement())
+  amount        Float?
+  posInvoiceId  BigInt? @map("pos_invoice_id")
+  paymentModeId BigInt? @map("payment_mode_id")
+  currencyId    BigInt? @map("currency_id")
+  isDeleted     Boolean @default(false) @map("is_deleted")
+
+  invoice  PosInvoice? @relation(fields: [posInvoiceId], references: [id])
+  currency Currency?   @relation(fields: [currencyId], references: [id])
+
+  @@map("pos_invoice_payment_detail")
+}
+
+// ── old_jewellery_purchase (Old Gold Purchase / OJP) ────────────────────
+// Added for the Transactions page's "OJP" section. Only the columns this
+// app reads are modeled — run `db pull` for the rest.
+model OldJewelleryPurchase {
+  id            BigInt    @id @default(autoincrement())
+  voucherNumber String?   @map("voucher_number") @db.VarChar(255)
+  voucherDate   DateTime? @map("voucher_date")
+  status        String?   @db.VarChar(255)
+  remarks       String?   @db.VarChar(255)
+  pieces        Int?
+  stoneWeight   Float?    @map("stone_weight")
+  grossWeight   Float?    @map("gross_weight")
+  netWeight     Float?    @map("net_weight")
+  grandTotal    Float?    @map("grand_total")
+  paidAmount    Float?    @map("paid_amount")
+  balance       Float?
+  branchId      BigInt    @map("branch_id")
+  posCustomerId BigInt    @map("pos_customer_id")
+  currencyId    BigInt    @map("currency_id")
+  salesPersonId BigInt    @map("sales_person_id")
+  isDeleted     Boolean   @default(false) @map("is_deleted")
+  createdDate   DateTime? @map("created_date")
+
+  customer    PosCustomer                         @relation(fields: [posCustomerId], references: [id])
+  branch      Branch                              @relation(fields: [branchId], references: [id])
+  currency    Currency                            @relation(fields: [currencyId], references: [id])
+  salesPerson SalesPerson                         @relation(fields: [salesPersonId], references: [id])
+  lineItems   OldJewelleryPurchaseLineItem[]
+  payments    OldJewelleryPurchasePaymentDetail[]
+
+  @@map("old_jewellery_purchase")
+}
+
+model OldJewelleryPurchaseLineItem {
+  id                     BigInt  @id @default(autoincrement())
+  code                   String? @db.VarChar(255)
+  description            String? @db.VarChar(255)
+  pieces                 Int?
+  weight                 Float?
+  amount                 Float?
+  grossWeight            Float?  @map("gross_weight")
+  netWeight              Float?  @map("net_weight")
+  stoneWeight            Float?  @map("stone_weight")
+  oldJewelleryPurchaseId BigInt? @map("old_jewellery_purchase_id")
+  itemId                 BigInt? @map("item_id")
+  isDeleted              Boolean @default(false) @map("is_deleted")
+
+  purchase OldJewelleryPurchase? @relation(fields: [oldJewelleryPurchaseId], references: [id])
+  item     Item?                 @relation(fields: [itemId], references: [id])
+
+  @@map("old_jewellery_purchase_line_item")
+}
+
+model OldJewelleryPurchasePaymentDetail {
+  id                     BigInt  @id @default(autoincrement())
+  amount                 Float?
+  oldJewelleryPurchaseId BigInt? @map("old_jewellery_purchase_id")
+  paymentModeId          BigInt? @map("payment_mode_id")
+  currencyId             BigInt? @map("currency_id")
+  isDeleted              Boolean @default(false) @map("is_deleted")
+
+  purchase OldJewelleryPurchase? @relation(fields: [oldJewelleryPurchaseId], references: [id])
+  currency Currency?             @relation(fields: [currencyId], references: [id])
+
+  @@map("old_jewellery_purchase_payment_detail")
+}
+
+// ── country / state / city (customer profile lookups) ──────────────────
+// Added for the customer profile page: Country, Province (state), and
+// City dropdowns, plus separate Nationality and Document Issuing Country
+// pickers (both also point at `country` — hence the three named relations
+// on PosCustomer, since Prisma requires unique relation names when more
+// than one field on a model references the same related model).
+model Country {
+  id          BigInt  @id @default(autoincrement())
+  code        String? @db.VarChar(255)
+  name        String? @db.VarChar(255)
+  countryCode String? @map("country_code") @db.VarChar(20) // dialing code, auto-filled when Country is selected
+  isDeleted   Boolean @default(false) @map("is_deleted")
+
+  states                             State[]
+  customersByCountry                 PosCustomer[] @relation("CustomerCountry")
+  customersByNationality              PosCustomer[] @relation("CustomerNationality")
+  customersByDocumentIssuingCountry   PosCustomer[] @relation("CustomerDocumentIssuingCountry")
+
+  @@map("country")
+}
+
+model State {
+  id        BigInt  @id @default(autoincrement())
+  code      String? @db.VarChar(255)
+  name      String? @db.VarChar(255)
+  countryId BigInt? @map("country_id")
+  isDeleted Boolean @default(false) @map("is_deleted")
+
+  country   Country?      @relation(fields: [countryId], references: [id])
+  cities    City[]
+  customers PosCustomer[]
+
+  @@map("state")
+}
+
+model City {
+  id        BigInt  @id @default(autoincrement())
+  code      String? @db.VarChar(255)
+  name      String? @db.VarChar(255)
+  stateId   BigInt? @map("state_id")
+  isDeleted Boolean @default(false) @map("is_deleted")
+
+  state     State?        @relation(fields: [stateId], references: [id])
+  customers PosCustomer[]
+
+  @@map("city")
+}
+
+// ── sales_person (shown on Scheme/Retail Sale/OJP transaction cards) ──────
+model SalesPerson {
+  id        BigInt  @id @default(autoincrement())
+  code      String? @db.VarChar(255)
+  name      String? @db.VarChar(255)
+  isDeleted Boolean @default(false) @map("is_deleted")
+
+  registrations         SchemeCustomerRegistration[]
+  posInvoices           PosInvoice[]
+  oldJewelleryPurchases OldJewelleryPurchase[]
+  retailSalesOrders     RetailSalesOrder[]
+  advanceReceipts       AdvanceReceipt[]
+
+  @@map("sales_person")
+}
+
+// ── retail_sales_order (Sales Order) ────────────────────────────────────
+// Added for the Transactions page's "Sales Order" tab. Distinct from
+// pos_invoice (Retail Sale) — confirmed both tables exist independently in
+// the real dump, and retail_sales_order_invoice is a join table linking an
+// order to the pos_invoice eventually raised against it, confirming Sales
+// Order is the pre-invoice order stage. Only the columns this app reads
+// are modeled — run `db pull` for the rest.
+model RetailSalesOrder {
+  id                  BigInt    @id @default(autoincrement())
+  voucherNumber       String?   @map("voucher_number") @db.VarChar(255)
+  voucherDate         DateTime? @map("voucher_date") @db.Date
+  deliveryDate        DateTime? @map("delivery_date") @db.Date
+  status              String?   @db.VarChar(50)
+  totalAmountPaid     Float?    @map("total_amount_paid")
+  balanceAmountPaid   Float?    @map("balance_amount_paid")
+  metalWeightFixed    Float?    @map("metal_weight_fixed")
+  balanceWeightFixed  Float?    @map("balance_weight_fixed")
+  remarks             String?   @db.VarChar(255)
+  customerId          BigInt?   @map("customer_id")
+  salesmanId          BigInt?   @map("salesman_id")
+  branchId            BigInt?   @map("branch_id")
+  isDeleted           Boolean   @default(false) @map("is_deleted")
+  createdDate         DateTime? @map("created_date")
+
+  customer    PosCustomer?                     @relation(fields: [customerId], references: [id])
+  salesPerson SalesPerson?                     @relation(fields: [salesmanId], references: [id])
+  branch      Branch?                          @relation(fields: [branchId], references: [id])
+  lineItems   RetailSalesOrderLineItem[]
+  payments    RetailSalesOrderPaymentDetail[]
+  invoiceLinks RetailSalesOrderInvoice[]
+
+  @@map("retail_sales_order")
+}
+
+// Join table: which pos_invoice(s) a sales order was eventually billed
+// through. Modeled for completeness; not yet used in the UI display.
+model RetailSalesOrderInvoice {
+  id                 BigInt  @id @default(autoincrement())
+  retailSalesOrderId BigInt? @map("retail_sales_order_id")
+  posInvoiceId       BigInt? @map("pos_invoice_id")
+  isDeleted          Boolean @default(false) @map("is_deleted")
+
+  order RetailSalesOrder? @relation(fields: [retailSalesOrderId], references: [id])
+
+  @@map("retail_sales_order_invoice")
+}
+
+model RetailSalesOrderLineItem {
+  id                 BigInt  @id @default(autoincrement())
+  itemId             BigInt? @map("item_id")
+  description        String? @db.VarChar(255)
+  metalWeight        Float?  @map("metal_weight")
+  stoneWeight        Float?  @map("stone_weight")
+  pieces             Int?
+  metalValue         Float?  @map("metal_value")
+  stoneValue         Float?  @map("stone_value")
+  mc                 Float?
+  total              Float?
+  metalRate          Float?  @default(0) @map("metal_rate")
+  retailSalesOrderId BigInt? @map("retail_sales_order_id")
+  isDeleted          Boolean @default(false) @map("is_deleted")
+
+  order RetailSalesOrder? @relation(fields: [retailSalesOrderId], references: [id])
+  item  Item?             @relation(fields: [itemId], references: [id])
+
+  @@map("retail_sales_order_line_item")
+}
+
+model RetailSalesOrderPaymentDetail {
+  id                 BigInt  @id @default(autoincrement())
+  amount             Float?
+  referenceNumber    String? @map("reference_number") @db.VarChar(255)
+  rate               Float?
+  lcAmount           Float?  @map("lc_amount")
+  retailSalesOrderId BigInt? @map("retail_sales_order_id")
+  paymentModeId      BigInt? @map("payment_mode_id")
+  currencyId         BigInt? @map("currency_id")
+  isDeleted          Boolean @default(false) @map("is_deleted")
+
+  order    RetailSalesOrder? @relation(fields: [retailSalesOrderId], references: [id])
+  currency Currency?         @relation(fields: [currencyId], references: [id])
+
+  @@map("retail_sales_order_payment_detail")
+}
+
+// ── advance_receipt (Advance Receipt) ────────────────────────────────────
+// Added for the Transactions page's "Advance Receipt" tab. A flat receipt
+// like OJP — no line items needed for the requested display fields.
+model AdvanceReceipt {
+  id            BigInt    @id @default(autoincrement())
+  receiptNumber String?   @map("receipt_number") @db.VarChar(255)
+  receiptDate   DateTime? @map("receipt_date")
+  remarks       String?   @db.VarChar(255)
+  amount        Float?
+  balance       Float?
+  receiptType   String?   @map("receipt_type") @db.VarChar(255)
+  branchId      BigInt?   @map("branch_id")
+  salesPersonId BigInt?   @map("sales_person_id")
+  posCustomerId BigInt?   @map("pos_customer_id")
+  isDeleted     Boolean   @default(false) @map("is_deleted")
+  createdDate   DateTime? @map("created_date")
+
+  customer    PosCustomer?                @relation(fields: [posCustomerId], references: [id])
+  salesPerson SalesPerson?                @relation(fields: [salesPersonId], references: [id])
+  branch      Branch?                     @relation(fields: [branchId], references: [id])
+  payments    AdvanceReceiptPaymentDetail[]
+  transactions AdvanceReceiptTransaction[]
+
+  @@map("advance_receipt")
+}
+
+model AdvanceReceiptPaymentDetail {
+  id              BigInt  @id @default(autoincrement())
+  amount          Float?
+  referenceNumber String? @map("reference_number") @db.VarChar(255)
+  rate            Float?
+  lcAmount        Float?  @map("lc_amount")
+  advanceReceiptId BigInt? @map("advance_receipt_id")
+  paymentModeId   BigInt? @map("payment_mode_id")
+  currencyId      BigInt? @map("currency_id")
+  isDeleted       Boolean @default(false) @map("is_deleted")
+
+  receipt  AdvanceReceipt? @relation(fields: [advanceReceiptId], references: [id])
+  currency Currency?       @relation(fields: [currencyId], references: [id])
+
+  @@map("advance_receipt_payment_details")
+}
+
+// Ledger-style debit/credit lines for an advance receipt (e.g. applying it
+// against a later pos_invoice). Modeled for completeness; not yet used in
+// the UI display, which just shows the receipt's own amount/balance.
+model AdvanceReceiptTransaction {
+  id               BigInt  @id @default(autoincrement())
+  debit            Float?
+  credit           Float?
+  type             String? @db.VarChar(255)
+  advanceReceiptId BigInt? @map("advance_receipt_id")
+  branchId         BigInt? @map("branch_id")
+  posInvoiceId     BigInt? @map("pos_invoice_id")
+  posRepairInvoiceId BigInt? @map("pos_repair_invoice_id")
+  isDeleted        Boolean @default(false) @map("is_deleted")
+
+  receipt AdvanceReceipt? @relation(fields: [advanceReceiptId], references: [id])
+  branch  Branch?         @relation(fields: [branchId], references: [id])
+
+  @@map("advance_receipt_transaction")
+}

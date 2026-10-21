@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TORCAP Portal – GitHub Guide</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--g:#1f6b45;--gd:#14472d;--gl:#e8f3ec;--ink:#1c2a22;--line:#d6e4da}
+*{box-sizing:border-box}
+body{margin:0;background:#fff;color:var(--ink);font-family:'Manrope',sans-serif;line-height:1.65}
+header{background:var(--gd);color:#fff;padding:34px 20px}
+header div,main{max-width:900px;margin:0 auto}
+header h1{margin:0 0 6px;font-size:27px}
+header p{margin:0;opacity:.85}
+main{padding:20px 20px 60px}
+h2{color:var(--gd);border-bottom:2px solid var(--g);padding-bottom:6px;margin-top:38px}
+pre{background:#10261a;color:#d9f5e3;padding:14px 16px;border-radius:8px;overflow-x:auto;font-size:13.5px;font-family:'Manrope',sans-serif}
+code{background:var(--gl);padding:1px 5px;border-radius:4px;font-family:'Manrope',sans-serif}
+pre code{background:none;padding:0}
+.note,.warn{padding:12px 16px;border-radius:8px;margin:14px 0}
+.note{background:var(--gl);border-left:4px solid var(--g)}
+.warn{background:#fff6e0;border-left:4px solid #c68a00}
+</style>
+</head>
+<body>
+<header><div>
+<h1>Step 1: Put the Portal on GitHub, Step 2: Deploy to the Server</h1>
+<p>Flow: your PC → GitHub (private repository) → Linux server pulls from GitHub</p>
+</div></header>
+<main>
+
+<div class="warn"><b>Make the repository Private.</b> The code contains your business logic and database structure. The <code>.env</code> file (passwords) is already excluded by <code>.gitignore</code> and must never be uploaded.</div>
+
+<h2>A. One-time setup on your Windows PC</h2>
+<ol>
+<li>Install Git: download from <code>git-scm.com/download/win</code>, install with all default options.</li>
+<li>Create a free account at <code>github.com</code> if you do not have one.</li>
+<li>On GitHub click <b>+ → New repository</b>. Name: <code>torcap-scheme-portal</code>. Choose <b>Private</b>. Do <b>not</b> tick "Add a README". Click <b>Create repository</b>. Keep that page open: it shows your repository address, like <code>https://github.com/YOURNAME/torcap-scheme-portal.git</code>.</li>
+</ol>
+
+<h2>B. Upload the project (Command Prompt)</h2>
+<p>Open Command Prompt inside your project folder (the one containing <code>package.json</code>) and run these one at a time:</p>
+<pre><code>git config --global user.name "Your Name"
+git config --global user.email "sajeevn2000@gmail.com"
+git init
+git add .
+git status</code></pre>
+<p>Check the list: <code>.env</code>, <code>node_modules</code> and <code>.next</code> must <b>not</b> appear. Then:</p>
+<pre><code>git commit -m "TORCAP scheme portal first version"
+git branch -M main
+git remote add origin https://github.com/YOURNAME/torcap-scheme-portal.git
+git push -u origin main</code></pre>
+<p>A browser window opens asking you to sign in to GitHub; approve it. Refresh the GitHub page and your files appear.</p>
+
+<h2>C. Connect the server to GitHub (one time, on the server)</h2>
+<p>A private repository needs the server to prove who it is. The safest way is a read-only "deploy key".</p>
+<pre><code>ssh-keygen -t ed25519 -C "torcap-server" -f ~/.ssh/torcap_deploy -N ""
+cat ~/.ssh/torcap_deploy.pub</code></pre>
+<p>Copy the single line it prints. On GitHub open the repository → <b>Settings → Deploy keys → Add deploy key</b>, title <code>torcap-server</code>, paste the line, leave "Allow write access" <b>unticked</b>, Save. Back on the server:</p>
+<pre><code>cat &gt;&gt; ~/.ssh/config &lt;&lt;'EOF'
+Host github.com
+  IdentityFile ~/.ssh/torcap_deploy
+  IdentitiesOnly yes
+EOF
+chmod 600 ~/.ssh/config
+ssh -T git@github.com</code></pre>
+<p>Type <code>yes</code> if asked. You should see "Hi ... You've successfully authenticated".</p>
+
+<h2>D. First deployment on the server</h2>
+<p>This replaces Step 3 (upload zip) of the Deployment Guide. Do Steps 1 and 2 (server tools and database) from that guide first.</p>
+<pre><code>sudo mkdir -p /var/www/torcap
+sudo chown $USER:$USER /var/www/torcap
+git clone git@github.com:YOURNAME/torcap-scheme-portal.git /var/www/torcap
+cd /var/www/torcap</code></pre>
+<p>Then continue with Deployment Guide <b>Step 4</b> (create <code>.env</code>), Step 5 (build), and onwards. The <code>.env</code> is created only on the server.</p>
+
+<h2>E. Every future update</h2>
+<p><b>On your PC</b> after any change:</p>
+<pre><code>git add .
+git commit -m "Describe what you changed"
+git push</code></pre>
+<p><b>On the server:</b></p>
+<pre><code>cd /var/www/torcap
+git pull
+npm ci
+npx prisma generate
+rm -rf .next
+npm run build
+pm2 restart torcap-portal</code></pre>
+<p><b>Rollback</b> if a new version has a problem:</p>
+<pre><code>cd /var/www/torcap
+git log --oneline -5          # find the previous version's code (first 7 letters)
+git checkout PREVIOUSCODE
+npm ci &amp;&amp; npx prisma generate &amp;&amp; rm -rf .next &amp;&amp; npm run build
+pm2 restart torcap-portal
+# to return to latest later:  git checkout main &amp;&amp; git pull</code></pre>
+
+<div class="note"><b>Reminders:</b> never run <code>npx prisma db pull</code>; never commit <code>.env</code>; the file <code>Sona_Guideline.pdf</code> in the project is uploaded too, so remove it first (<code>git rm --cached Sona_Guideline.pdf</code> before the first commit, or delete it) if you do not want it on GitHub.</div>
+
+</main>
+</body>
+</html>

@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TORCAP Portal – Multi-Client Setup</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--g:#1f6b45;--gd:#14472d;--gl:#e8f3ec;--ink:#1c2a22;--line:#d6e4da}
+*{box-sizing:border-box}
+body{margin:0;background:#fff;color:var(--ink);font-family:'Manrope',sans-serif;line-height:1.65}
+header{background:var(--gd);color:#fff;padding:34px 20px}
+header div,main{max-width:900px;margin:0 auto}
+header h1{margin:0 0 6px;font-size:27px}
+header p{margin:0;opacity:.85}
+main{padding:20px 20px 60px}
+h2{color:var(--gd);border-bottom:2px solid var(--g);padding-bottom:6px;margin-top:38px}
+pre{background:#10261a;color:#d9f5e3;padding:14px 16px;border-radius:8px;overflow-x:auto;font-size:13.5px;font-family:'Manrope',sans-serif}
+code{background:var(--gl);padding:1px 5px;border-radius:4px;font-family:'Manrope',sans-serif}
+pre code{background:none;padding:0}
+.note,.warn{padding:12px 16px;border-radius:8px;margin:14px 0}
+.note{background:var(--gl);border-left:4px solid var(--g)}
+.warn{background:#fff6e0;border-left:4px solid #c68a00}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:left}
+th{background:var(--gl)}
+</style>
+</head>
+<body>
+<header><div>
+<h1>One Server, Many Clients</h1>
+<p>One copy of the code · one process per client · each client has its own database, domain and login settings</p>
+</div></header>
+<main>
+
+<div class="note"><b>How it works:</b> the code is installed once in <code>/var/www/torcap</code>. For each client you start one more PM2 process from that same code, with its own database address, secret, port and domain. A <code>git pull</code> and one build update every client together.</div>
+
+<table>
+<tr><th>Per client (different)</th><th>Shared (same)</th></tr>
+<tr><td>Database (<code>DATABASE_URL</code>)<br>Secret (<code>SESSION_SECRET</code>)<br>Port (3000, 3001, 3002 ...)<br>Domain and HTTPS certificate<br>Login rules: WhatsApp on/off, WhatsApp credentials, template name</td><td>Code folder, GitHub repository, Node.js, PM2, Nginx, PostgreSQL service</td></tr>
+</table>
+
+<div class="note"><b>Login differences per client</b> need no code change. WhatsApp sign-in on or off, the WhatsApp provider credentials, and branch currency are all read from each client's own <code>company</code> table. Only the template name comes from the process settings below. If you meant something else by "different login" (for example a different login page design or logo per client), tell me and I will add it as a setting.</div>
+
+<h2>1. A database and user for each client</h2>
+<p>Repeat for each client (change the names and password):</p>
+<pre><code>sudo -u postgres psql
+CREATE USER torcap_client2 WITH PASSWORD 'AnotherStrongPassword456';
+GRANT CONNECT ON DATABASE client2_db TO torcap_client2;
+\c client2_db
+GRANT USAGE ON SCHEMA public TO torcap_client2;
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO torcap_client2;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO torcap_client2;
+\q</code></pre>
+
+<h2>2. One settings file for all clients</h2>
+<p>This file holds passwords, so keep it outside the code folder (it must never go to GitHub):</p>
+<pre><code>sudo mkdir -p /etc/torcap
+sudo nano /etc/torcap/ecosystem.config.js</code></pre>
+<pre><code>const cwd = "/var/www/torcap";
+module.exports = {
+  apps: [
+    {
+      name: "torcap-sona",
+      cwd,
+      script: "npm",
+      args: "start -- -p 3000",
+      env: {
+        NODE_ENV: "production",
+        DATABASE_URL: "postgresql://torcap:Password1@localhost:5432/sit_sonasa2?schema=public",
+        SESSION_SECRET: "64-CHARACTER-RANDOM-VALUE-FOR-SONA",
+        WHATSAPP_OTP_TEMPLATE_NAME: "otp"
+      }
+    },
+    {
+      name: "torcap-client2",
+      cwd,
+      script: "npm",
+      args: "start -- -p 3001",
+      env: {
+        NODE_ENV: "production",
+        DATABASE_URL: "postgresql://torcap_client2:AnotherStrongPassword456@localhost:5432/client2_db?schema=public",
+        SESSION_SECRET: "A-DIFFERENT-64-CHARACTER-RANDOM-VALUE",
+        WHATSAPP_OTP_TEMPLATE_NAME: "otp"
+      }
+    }
+  ]
+};</code></pre>
+<pre><code>sudo chmod 600 /etc/torcap/ecosystem.config.js
+openssl rand -hex 32     # run once per client for each SESSION_SECRET</code></pre>
+<p>Settings given here take priority over any <code>.env</code> file in the folder, so you can leave the folder's <code>.env</code> out entirely (the build in step 3 does not need a database address).</p>
+
+<h2>3. Build once, start all</h2>
+<pre><code>cd /var/www/torcap
+npm ci
+npx prisma generate
+npm run build
+pm2 delete all 2&gt;/dev/null
+pm2 start /etc/torcap/ecosystem.config.js
+pm2 save
+pm2 status      # every client should show: online</code></pre>
+
+<h2>4. One domain per client in Nginx</h2>
+<p>Create one site file per client, for example <code>/etc/nginx/sites-available/torcap-client2</code>. It is the same as the first one but with a different domain and port, and the rate-limit line <code>limit_req_zone</code> must appear <b>only once</b> in total (keep it in the first file):</p>
+<pre><code>server {
+    listen 80;
+    server_name client2.yourcompany.com;
+
+    location /api/auth/ {
+        limit_req zone=authlimit burst=5 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}</code></pre>
+<pre><code>sudo ln -s /etc/nginx/sites-available/torcap-client2 /etc/nginx/sites-enabled/
+sudo nginx -t &amp;&amp; sudo systemctl reload nginx
+sudo certbot --nginx -d client2.yourcompany.com</code></pre>
+<p>Point each client's domain (DNS A record) at the server before running certbot.</p>
+
+<h2>5. Update every client at once</h2>
+<pre><code>cd /var/www/torcap
+git pull
+npm ci
+npx prisma generate
+rm -rf .next
+npm run build
+pm2 restart all --update-env</code></pre>
+
+<h2>6. Adding a new client later</h2>
+<ol>
+<li>Create its database and database user (step 1).</li>
+<li>Add one more block in <code>/etc/torcap/ecosystem.config.js</code> with the next port and a new secret.</li>
+<li><code>pm2 start /etc/torcap/ecosystem.config.js --only torcap-newclient</code> then <code>pm2 save</code>.</li>
+<li>Add the Nginx site file, reload, run certbot.</li>
+</ol>
+
+<div class="warn"><b>Each client's database must contain the TORCAP tables the portal reads, plus the <code>company</code> table with the WhatsApp settings.</b> Never run <code>npx prisma db pull</code> against any of them. If a client's database differs from the Sona one (different column names), tell me before deploying: the single shared <code>schema.prisma</code> must match all of them.</div>
+
+<div class="note"><b>Different servers instead?</b> If a client wants its own separate server, nothing changes in the code: follow GITHUB-GUIDE.html and DEPLOYMENT-GUIDE.html on that server with that client's database.</div>
+
+</main>
+</body>
+</html>

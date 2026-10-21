@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TORCAP Portal – Linux Deployment Guide</title>
+<style>
+:root{--g:#1f6b45;--gd:#14472d;--gl:#e8f3ec;--ink:#1c2a22;--mut:#5b6b61;--line:#d6e4da}
+*{box-sizing:border-box}
+body{margin:0;background:#fff;color:var(--ink);font-family:'Manrope',sans-serif;line-height:1.65}
+header{background:var(--gd);color:#fff;padding:36px 20px}
+header div,main{max-width:900px;margin:0 auto}
+header h1{margin:0 0 6px;font-size:28px}
+header p{margin:0;opacity:.85}
+main{padding:24px 20px 60px}
+h2{color:var(--gd);border-bottom:2px solid var(--g);padding-bottom:6px;margin-top:40px}
+h2 span{background:var(--g);color:#fff;border-radius:50%;display:inline-block;width:30px;height:30px;text-align:center;line-height:30px;font-size:15px;margin-right:8px}
+pre{background:#10261a;color:#d9f5e3;padding:14px 16px;border-radius:8px;overflow-x:auto;font-size:13.5px;line-height:1.5}
+code{background:var(--gl);padding:1px 5px;border-radius:4px;font-size:.92em}
+pre code{background:none;padding:0}
+.note,.warn{padding:12px 16px;border-radius:8px;margin:14px 0}
+.note{background:var(--gl);border-left:4px solid var(--g)}
+.warn{background:#fff6e0;border-left:4px solid #c68a00}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:left}
+th{background:var(--gl)}
+</style>
+</head>
+<body>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
+<header><div>
+<h1>TORCAP Scheme Portal – Production Deployment</h1>
+<p>Linux server (Ubuntu 22.04 / 24.04) · PostgreSQL on the same server · Nginx + HTTPS + PM2</p>
+</div></header>
+<main>
+
+<div class="note"><b>Before you start, have ready:</b> a server with root/sudo access, a domain name (e.g. <code>portal.yourcompany.com</code>) pointed at the server's IP address (an "A record" in your DNS), and the project zip <code>torcap-scheme-portal.zip</code>. Replace every <code>portal.yourcompany.com</code> below with your real domain. Commands starting with <code>sudo</code> need admin rights.</div>
+
+<div class="warn"><b>Golden rule:</b> never run <code>npx prisma db pull</code>. It rewrites the curated <code>prisma/schema.prisma</code> from the whole ERP database and breaks the build. Only <code>npx prisma generate</code> is ever needed.</div>
+
+<h2><span>1</span>Prepare the server</h2>
+<pre><code>sudo apt update &amp;&amp; sudo apt upgrade -y
+sudo apt install -y curl git unzip ufw nginx postgresql postgresql-contrib
+# Node.js 20 LTS
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+node -v   # should print v20.x
+sudo npm install -g pm2</code></pre>
+
+<h2><span>2</span>Database</h2>
+<p>If the portal uses the existing ERP database on this same server, skip creating a new one and just create a dedicated user for the portal. Open the Postgres prompt:</p>
+<pre><code>sudo -u postgres psql</code></pre>
+<p>Then type (change the password; use letters and numbers, avoid symbols like <code>@ : /</code> to keep the URL simple):</p>
+<pre><code>CREATE USER torcap WITH PASSWORD 'ChangeThisStrongPassword123';
+GRANT CONNECT ON DATABASE sit_sonasa2 TO torcap;
+\c sit_sonasa2
+GRANT USAGE ON SCHEMA public TO torcap;
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO torcap;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO torcap;
+\q</code></pre>
+<p>If you need to move your current database to this server, on the old machine run <code>pg_dump -Fc -U postgres sit_sonasa2 &gt; sit_sonasa2.dump</code>, copy the file over, then on the server: <code>sudo -u postgres createdb sit_sonasa2</code> and <code>sudo -u postgres pg_restore -d sit_sonasa2 sit_sonasa2.dump</code>.</p>
+<div class="note">Postgres on the server listens only on the server itself by default, which is what you want. Do not open port 5432 to the internet.</div>
+
+<h2><span>3</span>Upload and unpack the portal</h2>
+<pre><code>sudo mkdir -p /var/www/torcap
+sudo chown $USER:$USER /var/www/torcap
+# upload torcap-scheme-portal.zip to the server first (WinSCP / FileZilla / scp), e.g. into /tmp
+unzip /tmp/torcap-scheme-portal.zip -d /var/www/torcap
+cd /var/www/torcap
+ls    # you should see package.json, prisma, src ...</code></pre>
+<p class="note">If the zip creates an extra sub-folder, <code>cd</code> into it so that <code>package.json</code> is in your current folder.</p>
+
+<h2><span>4</span>Configure the environment file</h2>
+<p>Generate a secret and create <code>.env</code>:</p>
+<pre><code>openssl rand -hex 32          # copy the output
+nano .env</code></pre>
+<p>Paste the following, filling in your values (save with Ctrl+O, Enter, Ctrl+X):</p>
+<pre><code>DATABASE_URL="postgresql://torcap:ChangeThisStrongPassword123@localhost:5432/sit_sonasa2?schema=public"
+SESSION_SECRET="PASTE_THE_64_CHARACTER_OUTPUT_HERE"
+WHATSAPP_OTP_TEMPLATE_NAME="otp"
+NODE_ENV="production"</code></pre>
+<p>Lock the file down:</p>
+<pre><code>chmod 600 .env</code></pre>
+<ul>
+<li>Port <code>5432</code> is the Linux default (your Windows test used 5433). Check with <code>sudo -u postgres psql -c "show port;"</code>.</li>
+<li><code>SESSION_SECRET</code> must be 32+ characters. The site will refuse logins without it. Changing it later logs every customer out.</li>
+<li>WhatsApp credentials are read from the <code>company</code> table, not from this file.</li>
+<li>Set <code>WHATSAPP_OTP_TEMPLATE_NAME</code> to the exact approved template name in saudialert.</li>
+</ul>
+
+<h2><span>5</span>Build and test</h2>
+<pre><code>npm ci
+npx prisma generate
+npm run build
+npm start -- -p 3000     # quick test; stop with Ctrl+C</code></pre>
+<p>In a second terminal: <code>curl -I http://localhost:3000/login</code> should show <code>200</code>.</p>
+
+<h2><span>6</span>Run it permanently with PM2</h2>
+<pre><code>cd /var/www/torcap
+pm2 start npm --name torcap-portal -- start -- -p 3000
+pm2 save
+pm2 startup        # copy and run the single command it prints
+pm2 status</code></pre>
+<p>Useful: <code>pm2 logs torcap-portal</code> (live logs), <code>pm2 restart torcap-portal</code>.</p>
+
+<h2><span>7</span>Nginx reverse proxy with login rate limiting</h2>
+<p>This also protects the WhatsApp login from being spammed (each request costs a message).</p>
+<pre><code>sudo nano /etc/nginx/sites-available/torcap</code></pre>
+<pre><code>limit_req_zone $binary_remote_addr zone=authlimit:10m rate=5r/m;
+
+server {
+    listen 80;
+    server_name portal.yourcompany.com;
+
+    client_max_body_size 2m;
+
+    location /api/auth/ {
+        limit_req zone=authlimit burst=5 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}</code></pre>
+<pre><code>sudo ln -s /etc/nginx/sites-available/torcap /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t &amp;&amp; sudo systemctl reload nginx</code></pre>
+
+<h2><span>8</span>HTTPS (required)</h2>
+<p>Session cookies are marked <code>secure</code> in production, so login only works over HTTPS.</p>
+<pre><code>sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d portal.yourcompany.com
+# choose "redirect HTTP to HTTPS" when asked. Renewal is automatic.</code></pre>
+
+<h2><span>9</span>Firewall</h2>
+<pre><code>sudo ufw allow OpenSSH
+sudo ufw allow 'Nginx Full'
+sudo ufw enable
+sudo ufw status</code></pre>
+<p>Port 3000 and 5432 stay closed to the outside; only Nginx talks to the portal.</p>
+
+<h2><span>10</span>Go-live checklist</h2>
+<table>
+<tr><th>Check</th><th>Expected</th></tr>
+<tr><td>Open https://portal.yourcompany.com</td><td>Login page with padlock</td></tr>
+<tr><td>Log in with email/ID + mobile</td><td>WhatsApp code arrives; code opens Overview</td></tr>
+<tr><td>Wrong mobile number</td><td>Clear error message, no code sent</td></tr>
+<tr><td><code>pm2 status</code></td><td>torcap-portal: online</td></tr>
+<tr><td>Reboot server, wait 1 min</td><td>Site comes back by itself</td></tr>
+</table>
+
+<h2><span>11</span>Backups</h2>
+<pre><code>sudo mkdir -p /var/backups/torcap
+sudo crontab -e</code></pre>
+<p>Add this line (daily at 2 AM, keeps 14 days):</p>
+<pre><code>0 2 * * * sudo -u postgres pg_dump -Fc sit_sonasa2 &gt; /var/backups/torcap/db_$(date +\%F).dump &amp;&amp; find /var/backups/torcap -name "*.dump" -mtime +14 -delete</code></pre>
+<p>Also copy these backups off the server regularly.</p>
+
+<h2><span>12</span>Updating to a new version</h2>
+<pre><code>cd /var/www
+cp -r torcap torcap_backup_$(date +%F)       # rollback copy
+# upload the new zip, then unzip OVER the folder but keep .env:
+unzip -o /tmp/torcap-scheme-portal.zip -d /var/www/torcap
+cd /var/www/torcap
+npm ci
+npx prisma generate
+rm -rf .next
+npm run build
+pm2 restart torcap-portal</code></pre>
+<p><b>Rollback:</b> <code>pm2 stop torcap-portal</code>, rename the current folder, rename <code>torcap_backup_DATE</code> back to <code>torcap</code>, then <code>pm2 start</code> again from it.</p>
+
+<h2><span>13</span>Troubleshooting</h2>
+<table>
+<tr><th>Symptom</th><th>Fix</th></tr>
+<tr><td>"An unexpected error occurred" on login</td><td>Check <code>SESSION_SECRET</code> is set and 32+ chars, then <code>pm2 restart torcap-portal --update-env</code>; read <code>pm2 logs</code></td></tr>
+<tr><td>Login works but returns to login page</td><td>Site is being opened over http, not https</td></tr>
+<tr><td>502 Bad Gateway</td><td><code>pm2 status</code>; restart; check <code>pm2 logs</code></td></tr>
+<tr><td>Database connection error</td><td>Check <code>DATABASE_URL</code> user, password, port, database name</td></tr>
+<tr><td>WhatsApp code not arriving</td><td>Check <code>company.whatsapp_integration_enabled</code>, credentials, and template name in saudialert</td></tr>
+<tr><td>Prisma schema validation errors</td><td>Someone ran <code>db pull</code>. Restore the project's original <code>schema.prisma</code> and run <code>npx prisma generate</code></td></tr>
+</table>
+
+<h2>Security notes</h2>
+<ul>
+<li>Sessions now use a signed cookie (tamper-proof, 8-hour expiry) and the login form is rate limited by Nginx.</li>
+<li>The saudialert API address stored in the <code>company</code> table starts with <code>http://</code>, so its username and password travel unencrypted from your server. Ask the provider whether an <code>https://</code> address is available and update that column if so.</li>
+<li>The portal's database user has only read/insert/update rights, no delete or schema changes.</li>
+<li>Keep the OS updated: <code>sudo apt update &amp;&amp; sudo apt upgrade</code> monthly.</li>
+</ul>
+
+</main>
+</body>
+</html>
