@@ -59,7 +59,7 @@ export function setPendingOtp(customerId: string, code: string) {
   cookies().set(PENDING_COOKIE, value, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.COOKIE_SECURE ? process.env.COOKIE_SECURE === "true" : process.env.NODE_ENV === "production",
     path: "/",
     maxAge: OTP_TTL_SECONDS,
   });
@@ -126,7 +126,7 @@ export function verifyPendingOtp(submittedCode: string): VerifyOtpResult {
   cookies().set(PENDING_COOKIE, value, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.COOKIE_SECURE ? process.env.COOKIE_SECURE === "true" : process.env.NODE_ENV === "production",
     path: "/",
     maxAge: Math.max(1, Math.floor((pending.expiresAt - Date.now()) / 1000)),
   });
