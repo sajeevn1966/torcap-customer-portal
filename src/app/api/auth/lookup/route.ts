@@ -35,10 +35,13 @@ function maskWhatsapp(raw: string): string {
 // Step 1 of login — a two-factor lookup against pos_customer:
 //   1. Find the customer whose EMAIL or ID CARD NUMBER matches the
 //      submitted identifier.
-//   2. Confirm the submitted mobile number belongs to that SAME customer
-//      record (not just any customer in the table).
+//   2. Confirm the submitted number belongs to that SAME customer record
+//      (not just any customer in the table). Which number depends on the
+//      Company setting `whatsapp_integration_enabled`:
+//        ON  -> the customer's WhatsApp number (pos_customer.whatsapp_number)
+//        OFF -> the customer's mobile number (pos_customer.mobile)
 //
-// What happens next depends on Company settings (`whatsapp_integration_enabled`):
+// What happens next depends on the same setting:
 //   - ON (the normal case): generate a 6-digit code, store it (signed,
 //     short-lived) against that customer id, and send it via WhatsApp.
 //     The session only starts once that code is verified — see
@@ -65,6 +68,13 @@ export async function POST(req: NextRequest) {
       return badRequest("Please Enter A Valid Mobile Number.");
     }
 
+    // Is WhatsApp sign-in switched on? Decided first because it also decides
+    // WHICH phone number the customer must enter:
+    //   - ON:  the customer's WhatsApp number (the code is sent there)
+    //   - OFF: the customer's mobile number (no code; login completes here)
+    const company = await prisma.company.findFirst({ where: { isDeleted: false } });
+    const whatsappOn = company?.whatsappIntegrationEnabled ?? false;
+
     // Step 1 — find the customer by email OR ID card number.
     const customer = await prisma.posCustomer.findFirst({
       where: {
@@ -80,32 +90,32 @@ export async function POST(req: NextRequest) {
       return notFound("No Account Found For That Email Or ID Number.");
     }
 
-    // Step 2 — the mobile number must belong to THIS SAME customer record.
-    const customerMobileSuffix = customer.mobile ? last9Digits(customer.mobile) : "";
-    if (!customerMobileSuffix || customerMobileSuffix !== suffix) {
-      return notFound("Mobile Number Does Not Match Our Records For That Account.");
-    }
+    // Step 2 — the number entered must belong to THIS SAME customer record.
+    const storedNumber = whatsappOn ? customer.whatsappNumber : customer.mobile;
+    const storedSuffix = storedNumber ? last9Digits(storedNumber) : "";
 
-    // Is WhatsApp sign-in switched on at all? Checked directly here (not
-    // just inside sendWhatsAppOtp) so a company-wide "off" cleanly skips
-    // straight to login instead of being treated as a send failure.
-    const company = await prisma.company.findFirst({ where: { isDeleted: false } });
-    const whatsappOn = company?.whatsappIntegrationEnabled ?? false;
+    if (whatsappOn && storedSuffix.length < 9) {
+      return badRequest("No WhatsApp Number Is On File For This Account. Please Contact Us.");
+    }
+    if (!storedSuffix || storedSuffix !== suffix) {
+      return notFound(
+        whatsappOn
+          ? "WhatsApp Number Does Not Match Our Records For That Account."
+          : "Mobile Number Does Not Match Our Records For That Account."
+      );
+    }
 
     if (!whatsappOn) {
       setSessionCustomerId(customer.id.toString());
       return ok({ otpRequired: false, id: customer.id.toString(), name: customer.name });
     }
 
-    // WhatsApp sign-in is on — this account needs a WhatsApp number on file to receive the code.
-    if (!customer.whatsappNumber || customer.whatsappNumber.replace(/\D/g, "").length < 9) {
-      return badRequest("No WhatsApp Number Is On File For This Account. Please Contact Us.");
-    }
-
+    // Verified above: WhatsApp is on and this number matched the customer.
+    const whatsappNumber = customer.whatsappNumber ?? "";
     const code = generateOtpCode();
 
     try {
-      await sendWhatsAppOtp(customer.whatsappNumber, code);
+      await sendWhatsAppOtp(whatsappNumber, code);
     } catch (err) {
       if (err instanceof WhatsAppConfigError) {
         console.error("[auth/lookup] WhatsApp not configured:", err.message);
@@ -121,7 +131,7 @@ export async function POST(req: NextRequest) {
 
     return ok({
       otpRequired: true,
-      whatsappMasked: maskWhatsapp(customer.whatsappNumber),
+      whatsappMasked: maskWhatsapp(whatsappNumber),
       expiresInSeconds: OTP_TTL_SECONDS,
     });
   } catch (err) {
