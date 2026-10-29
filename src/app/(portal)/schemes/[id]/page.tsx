@@ -55,6 +55,7 @@ export default async function SchemeDetailPage({ params }: { params: { id: strin
         <InfoCard label="Registration Date" value={formatDate(registration.registrationDate)} />
         <InfoCard label="Final Due Date" value={formatDate(registration.finalInstallmentDueDate)} />
         <InfoCard label="Status" value={statusLabel} />
+        {lifecycleStatus === "REDEEMED" && <InfoCard label="Redeemed On" value={formatDate(registration.redeemedOn)} />}
       </div>
 
       <section>

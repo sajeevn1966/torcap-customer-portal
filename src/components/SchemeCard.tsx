@@ -70,6 +70,14 @@ export default function SchemeCard({ registration }: { registration: Registratio
           <span className="text-right font-medium text-ink-900 dark:text-ink-100">
             {registration.registrationNumber ?? String(registration.id)}
           </span>
+          {lifecycleStatus === "REDEEMED" && (
+            <>
+              <span className="text-ink-500 dark:text-ink-300">Redeemed On</span>
+              <span className="text-right font-medium text-ink-900 dark:text-ink-100">
+                {formatDate(registration.redeemedOn)}
+              </span>
+            </>
+          )}
         </div>
       </div>
 
