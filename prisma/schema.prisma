@@ -55,6 +55,7 @@ datasource db {
 // = 1, so callers use `findFirst()` rather than a specific id.
 model Company {
   id BigInt @id @default(autoincrement())
+  name String? @db.VarChar(255) // shown in the profile Consent text
 
   whatsappProvider            String?  @map("whatsapp_provider") @db.VarChar(50)
   whatsappApiUrl               String?  @map("whatsapp_api_url") @db.VarChar(255)
@@ -160,6 +161,37 @@ model PosCustomer {
   documentIssuingCountryId       BigInt?   @map("document_issuing_country_id")
   language                  String?   @default("en") @db.VarChar(255)
 
+  // ── profile additions (Update.docx, Nov 2026) ──
+  alternateContactNumber    String?   @map("alternate_contact_number") @db.VarChar(255)
+  contactViaWhatsapp        Boolean?  @map("contact_via_whatsapp")
+  contactViaSms             Boolean?  @map("contact_via_sms")
+  contactViaCall            Boolean?  @map("contact_via_call")
+  contactViaEmail           Boolean?  @map("contact_via_email")
+  preferredJewelryId        BigInt?   @map("preferred_jewelry_id")
+  preferredKaratId          BigInt?   @map("preferred_karat_id")
+  preferredStyleId          BigInt?   @map("preferred_style_id")
+  ringSize                  Float?    @map("ring_size")
+  bangleSize                Float?    @map("bangle_size")
+  preferredBranchId         BigInt?   @map("preferred_branch_id")
+  goldRateAlert             Boolean?  @map("gold_rate_alert")
+  goldRateAlertMode         String?   @map("gold_rate_alert_mode") @db.VarChar(255)
+  weeklyNotificationMail    Boolean?  @map("weekly_notification_mail")
+  anniversaryDate           DateTime? @map("anniversary_date") @db.Date
+  spouseName                String?   @map("spouse_name") @db.VarChar(255)
+  genderId                  BigInt?   @map("gender_id")
+  maritalStatusId           BigInt?   @map("marital_status_id")
+
+  customerTypeId            BigInt?   @map("customer_type_id")
+  customerGradeId           BigInt?   @map("customer_grade_id")
+  personaId                 BigInt?   @map("persona_id")
+  leadSourceId              BigInt?   @map("lead_source_id")
+  totalReferrals            Int?      @map("total_referrals")
+  familyMilestone           Int?      @map("family_milestone")
+  advocacyScore             Int?      @map("advocacy_score")
+  consentService            Boolean?  @map("consent_service")
+  consentMarketing          Boolean?  @map("consent_marketing")
+
+  familyMembers PosCustomerFamilyMember[]
   registrations SchemeCustomerRegistration[]
   receipts      SchemeReceipt[]
   branch        Branch?                       @relation(fields: [branchId], references: [id])
@@ -693,4 +725,48 @@ model AdvanceReceiptTransaction {
   branch  Branch?         @relation(fields: [branchId], references: [id])
 
   @@map("advance_receipt_transaction")
+}
+
+// ── profile lookups + family members (names/columns per Update.docx) ─────
+// Lookup tables are assumed to have id + name; verify with the column check
+// query in the delivery notes before deploying.
+model Division {
+  id   BigInt  @id @default(autoincrement())
+  name String? @db.VarChar(255)
+  @@map("division")
+}
+
+model Karat {
+  id   BigInt  @id @default(autoincrement())
+  name String? @db.VarChar(255)
+  @@map("karat")
+}
+
+model Gender {
+  id   BigInt  @id @default(autoincrement())
+  name String? @db.VarChar(255)
+  @@map("gender")
+}
+
+model SpecialAttribute {
+  id         BigInt  @id @default(autoincrement())
+  masterType String? @map("master_type") @db.VarChar(255)
+  name       String? @db.VarChar(255)
+  @@map("special_attribute")
+}
+
+model PosCustomerFamilyMember {
+  id              BigInt    @id @default(autoincrement())
+  posCustomerId   BigInt    @map("pos_customer_id")
+  memberOrder     Int?      @map("member_order")
+  isDeleted       Boolean   @default(false) @map("is_deleted")
+  name            String?   @db.VarChar(255)
+  relationshipId  BigInt?   @map("relationship_id")
+  dateOfBirth     DateTime? @map("date_of_birth") @db.Date
+  anniversaryDate DateTime? @map("anniversary_date") @db.Date
+  mobile          String?   @db.VarChar(255)
+  email           String?   @db.VarChar(255)
+
+  customer PosCustomer @relation(fields: [posCustomerId], references: [id])
+  @@map("pos_customer_family_member")
 }

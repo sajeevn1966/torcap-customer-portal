@@ -24,7 +24,65 @@ type CustomerProfile = {
   dateOfBirth: string | null;
   documentIssuingCountryId: string | null;
   language: string | null;
+  alternateContactNumber: string | null;
+  contactViaWhatsapp: boolean;
+  contactViaSms: boolean;
+  contactViaCall: boolean;
+  contactViaEmail: boolean;
+  preferredJewelryId: string | null;
+  preferredKaratId: string | null;
+  preferredStyleId: string | null;
+  ringSize: number | null;
+  bangleSize: number | null;
+  customerTypeId: string | null;
+  customerGradeId: string | null;
+  personaId: string | null;
+  leadSourceId: string | null;
+  totalReferrals: number | null;
+  familyMilestone: number | null;
+  advocacyScore: number | null;
+  consentService: boolean;
+  consentMarketing: boolean;
+  preferredBranchId: string | null;
+  goldRateAlert: boolean;
+  goldRateAlertMode: string | null;
+  weeklyNotificationMail: boolean;
+  anniversaryDate: string;
+  spouseName: string | null;
+  genderId: string | null;
+  maritalStatusId: string | null;
 };
+
+type FamilyMember = {
+  id: string;
+  name: string;
+  relationshipId: string;
+  dateOfBirth: string;
+  anniversaryDate: string;
+  mobile: string;
+  email: string;
+};
+
+type Lookups = {
+  divisions: LookupOption[];
+  karats: LookupOption[];
+  genders: LookupOption[];
+  maritalStatuses: LookupOption[];
+  relationships: LookupOption[];
+  styles: LookupOption[];
+  customerTypes: LookupOption[];
+  customerGrades: LookupOption[];
+  personas: LookupOption[];
+  leadSources: LookupOption[];
+  branches: LookupOption[];
+};
+
+const MAX_FAMILY_MEMBERS = 6;
+const ALERT_MODES = [
+  { value: "SMS", label: "SMS" },
+  { value: "WHATSAPP", label: "WhatsApp" },
+  { value: "EMAIL", label: "Email" },
+];
 
 const ID_TYPES = ["Passport", "Iqama", "Resident ID", "Emirates ID"];
 // The full ISO 639-1 language list, with the languages Sona's customers
@@ -247,13 +305,62 @@ function Field({
   );
 }
 
+function Check({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-ink-700 dark:text-ink-100">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-4 w-4 rounded border-ink-300 accent-brand-500"
+      />
+      {label}
+    </label>
+  );
+}
+
+function Select({
+  id,
+  value,
+  onChange,
+  options,
+  placeholder,
+}: {
+  id: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: LookupOption[];
+  placeholder: string;
+}) {
+  return (
+    <select id={id} className={inputClass} value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">{placeholder}</option>
+      {options.map((o) => (
+        <option key={o.id} value={o.id}>
+          {o.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+const sectionClass =
+  "rounded-2xl border border-ink-100 bg-white p-5 shadow-card dark:border-surface-border dark:bg-surface-raised";
+const sectionTitleClass = "mb-4 text-sm font-semibold uppercase tracking-wide text-ink-300 dark:text-ink-500";
+
 export default function ProfileForm({
   customer,
   countries,
   initialStates,
   initialCities,
+  familyMembers: initialFamily,
+  lookups,
+  companyName,
 }: {
   customer: CustomerProfile;
+  familyMembers: FamilyMember[];
+  lookups: Lookups;
+  companyName: string;
   countries: CountryOption[];
   initialStates: LookupOption[];
   initialCities: LookupOption[];
@@ -272,7 +379,36 @@ export default function ProfileForm({
     dateOfBirth: customer.dateOfBirth ?? "",
     documentIssuingCountryId: customer.documentIssuingCountryId ?? "",
     language: customer.language ?? "en",
+    alternateContactNumber: customer.alternateContactNumber ?? "",
+    contactViaWhatsapp: customer.contactViaWhatsapp,
+    contactViaSms: customer.contactViaSms,
+    contactViaCall: customer.contactViaCall,
+    contactViaEmail: customer.contactViaEmail,
+    preferredJewelryId: customer.preferredJewelryId ?? "",
+    preferredKaratId: customer.preferredKaratId ?? "",
+    preferredStyleId: customer.preferredStyleId ?? "",
+    ringSize: customer.ringSize?.toString() ?? "",
+    bangleSize: customer.bangleSize?.toString() ?? "",
+    customerTypeId: customer.customerTypeId ?? "",
+    customerGradeId: customer.customerGradeId ?? "",
+    personaId: customer.personaId ?? "",
+    leadSourceId: customer.leadSourceId ?? "",
+    consentService: customer.consentService,
+    consentMarketing: customer.consentMarketing,
+    preferredBranchId: customer.preferredBranchId ?? "",
+    goldRateAlert: customer.goldRateAlert,
+    goldRateAlertMode: customer.goldRateAlertMode ?? "",
+    weeklyNotificationMail: customer.weeklyNotificationMail,
+    anniversaryDate: customer.anniversaryDate ?? "",
+    spouseName: customer.spouseName ?? "",
+    genderId: customer.genderId ?? "",
+    maritalStatusId: customer.maritalStatusId ?? "",
   });
+  const [family, setFamily] = useState<FamilyMember[]>(initialFamily);
+
+  function updateMember(i: number, patch: Partial<FamilyMember>) {
+    setFamily((list) => list.map((m, idx) => (idx === i ? { ...m, ...patch } : m)));
+  }
 
   const [states, setStates] = useState<LookupOption[]>(initialStates);
   const [cities, setCities] = useState<LookupOption[]>(initialCities);
@@ -322,11 +458,29 @@ export default function ProfileForm({
     }
   }
 
+  function fail(message: string) {
+    setError(message);
+    setSaving(false);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
     setSaved(false);
+
+    // Required fields (marked * on the form)
+    if (!form.email.trim()) return fail("Email Is Required.");
+    if (!form.whatsappNumber.trim()) return fail("WhatsApp Number Is Required.");
+    if (!(form.contactViaWhatsapp || form.contactViaSms || form.contactViaCall || form.contactViaEmail))
+      return fail("Please Select At Least One Preferred Contact Channel.");
+    if (!form.leadSourceId) return fail("Lead Source Is Required.");
+    if (!form.consentService) return fail("Please Acknowledge The Collection And Processing Of Your Personal Information.");
+    if (!form.preferredKaratId) return fail("Preferred Karat Is Required.");
+    if (!form.preferredBranchId) return fail("Preferred Branch / Outlet Is Required.");
+    if (!form.genderId) return fail("Gender Is Required.");
+    if (form.goldRateAlert && !form.goldRateAlertMode) return fail("Please Select A Mode Of Gold Rate Alert.");
+
     try {
       const res = await fetch("/api/profile", {
         method: "PATCH",
@@ -345,6 +499,39 @@ export default function ProfileForm({
           documentIssuingCountryId: form.documentIssuingCountryId || null,
           dateOfBirth: form.dateOfBirth || null,
           language: form.language,
+          alternateContactNumber: form.alternateContactNumber,
+          contactViaWhatsapp: form.contactViaWhatsapp,
+          contactViaSms: form.contactViaSms,
+          contactViaCall: form.contactViaCall,
+          contactViaEmail: form.contactViaEmail,
+          preferredJewelryId: form.preferredJewelryId || null,
+          preferredKaratId: form.preferredKaratId || null,
+          preferredStyleId: form.preferredStyleId || null,
+          ringSize: form.ringSize === "" ? null : Number(form.ringSize),
+          bangleSize: form.bangleSize === "" ? null : Number(form.bangleSize),
+          customerTypeId: form.customerTypeId || null,
+          customerGradeId: form.customerGradeId || null,
+          personaId: form.personaId || null,
+          leadSourceId: form.leadSourceId || null,
+          consentService: form.consentService,
+          consentMarketing: form.consentMarketing,
+          preferredBranchId: form.preferredBranchId || null,
+          goldRateAlert: form.goldRateAlert,
+          goldRateAlertMode: form.goldRateAlert ? form.goldRateAlertMode : null,
+          weeklyNotificationMail: form.weeklyNotificationMail,
+          anniversaryDate: form.anniversaryDate || null,
+          spouseName: form.spouseName,
+          genderId: form.genderId || null,
+          maritalStatusId: form.maritalStatusId || null,
+          familyMembers: family.map((m) => ({
+            id: m.id || null,
+            name: m.name,
+            relationshipId: m.relationshipId || null,
+            dateOfBirth: m.dateOfBirth || null,
+            anniversaryDate: m.anniversaryDate || null,
+            mobile: m.mobile,
+            email: m.email,
+          })),
         }),
       });
       const json = await res.json();
@@ -383,7 +570,7 @@ export default function ProfileForm({
           Contact
         </h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="WhatsApp Number" htmlFor="whatsappNumber">
+          <Field label="WhatsApp Number *" htmlFor="whatsappNumber">
             <input
               id="whatsappNumber"
               type="tel"
@@ -392,7 +579,7 @@ export default function ProfileForm({
               onChange={(e) => setForm((f) => ({ ...f, whatsappNumber: e.target.value }))}
             />
           </Field>
-          <Field label="Email" htmlFor="email">
+          <Field label="Email *" htmlFor="email">
             <input
               id="email"
               type="email"
@@ -401,6 +588,24 @@ export default function ProfileForm({
               onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
             />
           </Field>
+          <Field label="Alternate Contact Number" htmlFor="alternateContactNumber">
+            <input
+              id="alternateContactNumber"
+              type="tel"
+              className={inputClass}
+              value={form.alternateContactNumber}
+              onChange={(e) => setForm((f) => ({ ...f, alternateContactNumber: e.target.value }))}
+            />
+          </Field>
+          <div>
+            <span className={labelClass}>Preferred Contact Channel *</span>
+            <div className="flex flex-wrap gap-x-5 gap-y-2 pt-1.5">
+              <Check label="WhatsApp" checked={form.contactViaWhatsapp} onChange={(v) => setForm((f) => ({ ...f, contactViaWhatsapp: v }))} />
+              <Check label="SMS" checked={form.contactViaSms} onChange={(v) => setForm((f) => ({ ...f, contactViaSms: v }))} />
+              <Check label="Call" checked={form.contactViaCall} onChange={(v) => setForm((f) => ({ ...f, contactViaCall: v }))} />
+              <Check label="Email" checked={form.contactViaEmail} onChange={(v) => setForm((f) => ({ ...f, contactViaEmail: v }))} />
+            </div>
+          </div>
         </div>
       </section>
 
@@ -462,15 +667,6 @@ export default function ProfileForm({
                 </option>
               ))}
             </select>
-          </Field>
-          <Field label="Date Of Birth" htmlFor="dateOfBirth">
-            <input
-              id="dateOfBirth"
-              type="date"
-              className={inputClass}
-              value={form.dateOfBirth}
-              onChange={(e) => setForm((f) => ({ ...f, dateOfBirth: e.target.value }))}
-            />
           </Field>
         </div>
       </section>
@@ -554,6 +750,201 @@ export default function ProfileForm({
               onChange={(e) => setForm((f) => ({ ...f, zipcode: e.target.value }))}
             />
           </Field>
+        </div>
+      </section>
+
+      {/* Customer Classification */}
+      <section className={sectionClass}>
+        <h2 className={sectionTitleClass}>Customer Classification</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Field label="Customer Type" htmlFor="customerTypeId">
+            <Select id="customerTypeId" value={form.customerTypeId} options={lookups.customerTypes} placeholder="Select Customer Type"
+              onChange={(v) => setForm((f) => ({ ...f, customerTypeId: v }))} />
+          </Field>
+          <Field label="Customer Grade" htmlFor="customerGradeId">
+            <Select id="customerGradeId" value={form.customerGradeId} options={lookups.customerGrades} placeholder="Select Customer Grade"
+              onChange={(v) => setForm((f) => ({ ...f, customerGradeId: v }))} />
+          </Field>
+          <Field label="Persona" htmlFor="personaId">
+            <Select id="personaId" value={form.personaId} options={lookups.personas} placeholder="Select Persona"
+              onChange={(v) => setForm((f) => ({ ...f, personaId: v }))} />
+          </Field>
+          <Field label="Lead Source *" htmlFor="leadSourceId">
+            <Select id="leadSourceId" value={form.leadSourceId} options={lookups.leadSources} placeholder="Select Lead Source"
+              onChange={(v) => setForm((f) => ({ ...f, leadSourceId: v }))} />
+          </Field>
+          <Field label="Total Referrals">
+            <input className={inputClass} value={customer.totalReferrals ?? ""} disabled />
+          </Field>
+          <Field label="Family Milestone">
+            <input className={inputClass} value={customer.familyMilestone ?? ""} disabled />
+          </Field>
+          <Field label="Advocacy Score">
+            <input className={inputClass} value={customer.advocacyScore ?? ""} disabled />
+          </Field>
+        </div>
+      </section>
+
+      {/* Jewellery Preferences & Alerts */}
+      <section className={sectionClass}>
+        <h2 className={sectionTitleClass}>Jewellery Preferences &amp; Alerts</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Field label="Preferred Jewellery" htmlFor="preferredJewelryId">
+            <Select id="preferredJewelryId" value={form.preferredJewelryId} options={lookups.divisions} placeholder="Select Jewellery"
+              onChange={(v) => setForm((f) => ({ ...f, preferredJewelryId: v }))} />
+          </Field>
+          <Field label="Preferred Karat *" htmlFor="preferredKaratId">
+            <Select id="preferredKaratId" value={form.preferredKaratId} options={lookups.karats} placeholder="Select Karat"
+              onChange={(v) => setForm((f) => ({ ...f, preferredKaratId: v }))} />
+          </Field>
+          <Field label="Preferred Style" htmlFor="preferredStyleId">
+            <Select id="preferredStyleId" value={form.preferredStyleId} options={lookups.styles} placeholder="Select Style"
+              onChange={(v) => setForm((f) => ({ ...f, preferredStyleId: v }))} />
+          </Field>
+          <Field label="Ring Size" htmlFor="ringSize">
+            <input id="ringSize" type="number" step="0.5" min="0" className={inputClass} value={form.ringSize}
+              onChange={(e) => setForm((f) => ({ ...f, ringSize: e.target.value }))} />
+          </Field>
+          <Field label="Bangle Size" htmlFor="bangleSize">
+            <input id="bangleSize" type="number" step="0.1" min="0" className={inputClass} value={form.bangleSize}
+              onChange={(e) => setForm((f) => ({ ...f, bangleSize: e.target.value }))} />
+          </Field>
+          <Field label="Preferred Branch / Outlet *" htmlFor="preferredBranchId">
+            <Select id="preferredBranchId" value={form.preferredBranchId} options={lookups.branches} placeholder="Select Branch"
+              onChange={(v) => setForm((f) => ({ ...f, preferredBranchId: v }))} />
+          </Field>
+          <div className="flex flex-col gap-3 sm:col-span-3 sm:flex-row sm:items-start sm:gap-10">
+            <div className="space-y-3">
+              <Check label="Gold Rate Alert" checked={form.goldRateAlert}
+                onChange={(v) => setForm((f) => ({ ...f, goldRateAlert: v, goldRateAlertMode: v ? f.goldRateAlertMode : "" }))} />
+              {form.goldRateAlert && (
+                <Field label="Mode Of Gold Rate Alert *" htmlFor="goldRateAlertMode">
+                  <select id="goldRateAlertMode" className={inputClass} value={form.goldRateAlertMode}
+                    onChange={(e) => setForm((f) => ({ ...f, goldRateAlertMode: e.target.value }))}>
+                    <option value="">Select Mode</option>
+                    {ALERT_MODES.map((m) => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+            </div>
+            <Check label="Weekly Notification Mail" checked={form.weeklyNotificationMail}
+              onChange={(v) => setForm((f) => ({ ...f, weeklyNotificationMail: v }))} />
+          </div>
+        </div>
+      </section>
+
+      {/* Personal & Family Details */}
+      <section className={sectionClass}>
+        <h2 className={sectionTitleClass}>Personal &amp; Family Details</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Field label="Date Of Birth" htmlFor="dateOfBirth">
+            <input id="dateOfBirth" type="date" className={inputClass} value={form.dateOfBirth}
+              onChange={(e) => setForm((f) => ({ ...f, dateOfBirth: e.target.value }))} />
+          </Field>
+          <Field label="Anniversary Date" htmlFor="anniversaryDate">
+            <input id="anniversaryDate" type="date" className={inputClass} value={form.anniversaryDate}
+              onChange={(e) => setForm((f) => ({ ...f, anniversaryDate: e.target.value }))} />
+          </Field>
+          <Field label="Spouse Name" htmlFor="spouseName">
+            <TextInput id="spouseName" className={inputClass} value={form.spouseName}
+              onChange={(v) => setForm((f) => ({ ...f, spouseName: v }))} />
+          </Field>
+          <Field label="Gender *" htmlFor="genderId">
+            <Select id="genderId" value={form.genderId} options={lookups.genders} placeholder="Select Gender"
+              onChange={(v) => setForm((f) => ({ ...f, genderId: v }))} />
+          </Field>
+          <Field label="Marital Status" htmlFor="maritalStatusId">
+            <Select id="maritalStatusId" value={form.maritalStatusId} options={lookups.maritalStatuses} placeholder="Select Marital Status"
+              onChange={(v) => setForm((f) => ({ ...f, maritalStatusId: v }))} />
+          </Field>
+        </div>
+
+        <div className="mt-5 border-t border-dashed border-ink-100 pt-4 dark:border-surface-border">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-sm font-medium text-ink-700 dark:text-ink-100">
+              Family Members{" "}
+              <span className="ml-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-700 dark:bg-brand-800/30 dark:text-brand-300">
+                {family.length} / {MAX_FAMILY_MEMBERS}
+              </span>
+            </p>
+            <button
+              type="button"
+              disabled={family.length >= MAX_FAMILY_MEMBERS}
+              onClick={() =>
+                setFamily((l) => [...l, { id: "", name: "", relationshipId: "", dateOfBirth: "", anniversaryDate: "", mobile: "", email: "" }])
+              }
+              className="rounded-xl border border-brand-500 px-4 py-2 text-sm font-semibold text-brand-600 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-brand-300 dark:hover:bg-brand-800/30"
+            >
+              + Add Member
+            </button>
+          </div>
+          {family.length === 0 ? (
+            <p className="text-sm text-ink-500 dark:text-ink-300">No Family Members Added.</p>
+          ) : (
+            <div className="space-y-3">
+              {family.map((m, i) => (
+                <div key={i} className="grid grid-cols-1 gap-3 rounded-xl border border-ink-100 p-3 dark:border-surface-border sm:grid-cols-6">
+                  <Field label="Name">
+                    <TextInput className={inputClass} value={m.name} onChange={(v) => updateMember(i, { name: v })} />
+                  </Field>
+                  <Field label="Relationship">
+                    <Select id={`rel-${i}`} value={m.relationshipId} options={lookups.relationships} placeholder="Select"
+                      onChange={(v) => updateMember(i, { relationshipId: v })} />
+                  </Field>
+                  <Field label="DOB">
+                    <input type="date" className={inputClass} value={m.dateOfBirth} onChange={(e) => updateMember(i, { dateOfBirth: e.target.value })} />
+                  </Field>
+                  <Field label="Anniversary">
+                    <input type="date" className={inputClass} value={m.anniversaryDate} onChange={(e) => updateMember(i, { anniversaryDate: e.target.value })} />
+                  </Field>
+                  <Field label="Mobile">
+                    <input type="tel" className={inputClass} value={m.mobile} onChange={(e) => updateMember(i, { mobile: e.target.value })} />
+                  </Field>
+                  <Field label="Email ID">
+                    <div className="flex items-center gap-2">
+                      <input type="email" className={inputClass} value={m.email} onChange={(e) => updateMember(i, { email: e.target.value })} />
+                      <button
+                        type="button"
+                        aria-label="Remove Member"
+                        onClick={() => setFamily((l) => l.filter((_, idx) => idx !== i))}
+                        className="rounded-lg px-2 py-1 text-lg leading-none text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </Field>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Consent (text only; company name comes from the company table) */}
+      <section className={sectionClass}>
+        <h2 className={sectionTitleClass}>Consent</h2>
+        <div className="space-y-2 text-sm text-ink-700 dark:text-ink-100">
+          <p className="font-semibold">Dear Valued Customer,</p>
+          <p>At {companyName}, we value your privacy and are committed to protecting your personal information.</p>
+          <p>
+            By providing your details, you acknowledge that your personal information may be collected and processed
+            for the following purposes, in accordance with applicable data protection laws:
+          </p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li><b>Customer Service:</b> Purchase records, billing, warranties, exchanges, and after-sales support.</li>
+            <li><b>Customer Communication:</b> Order updates, service notifications, and responses to your enquiries.</li>
+            <li><b>Marketing Communications (Optional):</b> Offers, promotions, new collections, events, and personalized recommendations through WhatsApp, SMS, email, or phone.</li>
+          </ul>
+          <div className="space-y-2 rounded-xl border border-brand-100 bg-brand-50/40 p-4 dark:border-surface-border dark:bg-surface">
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-300">Your Consent *</p>
+            <Check label={`I acknowledge the collection and processing of my personal information for customer service and transaction-related purposes, as explained in the applicable privacy notice.`}
+              checked={form.consentService} onChange={(v) => setForm((f) => ({ ...f, consentService: v }))} />
+            <Check label={`I voluntarily consent to receive marketing communications from ${companyName} through the channels selected above.`}
+              checked={form.consentMarketing} onChange={(v) => setForm((f) => ({ ...f, consentMarketing: v }))} />
+          </div>
+          <p className="pt-2 text-ink-500 dark:text-ink-300">Thank you for trusting {companyName}. Always With You</p>
         </div>
       </section>
 

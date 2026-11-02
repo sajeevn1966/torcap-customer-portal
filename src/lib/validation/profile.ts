@@ -20,6 +20,46 @@ export const updateProfileSchema = z.object({
   documentIssuingCountryId: z.coerce.bigint().optional().nullable(),
   dateOfBirth: z.coerce.date().optional().nullable(),
   language: z.string().max(255).optional().or(z.literal("")),
+
+  alternateContactNumber: z.string().max(255).optional().or(z.literal("")),
+  contactViaWhatsapp: z.boolean().optional(),
+  contactViaSms: z.boolean().optional(),
+  contactViaCall: z.boolean().optional(),
+  contactViaEmail: z.boolean().optional(),
+  preferredJewelryId: z.coerce.bigint().optional().nullable(),
+  preferredKaratId: z.coerce.bigint().optional().nullable(),
+  preferredStyleId: z.coerce.bigint().optional().nullable(),
+  ringSize: z.coerce.number().positive().optional().nullable(),
+  bangleSize: z.coerce.number().positive().optional().nullable(),
+  customerTypeId: z.coerce.bigint().optional().nullable(),
+  customerGradeId: z.coerce.bigint().optional().nullable(),
+  personaId: z.coerce.bigint().optional().nullable(),
+  leadSourceId: z.coerce.bigint().optional().nullable(),
+  consentService: z.boolean().optional(),
+  consentMarketing: z.boolean().optional(),
+  preferredBranchId: z.coerce.bigint().optional().nullable(),
+  goldRateAlert: z.boolean().optional(),
+  goldRateAlertMode: z.enum(["SMS", "WHATSAPP", "EMAIL"]).optional().nullable().or(z.literal("")),
+  weeklyNotificationMail: z.boolean().optional(),
+  anniversaryDate: z.coerce.date().optional().nullable(),
+  spouseName: z.string().max(255).optional().or(z.literal("")),
+  genderId: z.coerce.bigint().optional().nullable(),
+  maritalStatusId: z.coerce.bigint().optional().nullable(),
+
+  familyMembers: z
+    .array(
+      z.object({
+        id: z.coerce.bigint().optional().nullable(),
+        name: z.string().max(255).optional().or(z.literal("")),
+        relationshipId: z.coerce.bigint().optional().nullable(),
+        dateOfBirth: z.coerce.date().optional().nullable(),
+        anniversaryDate: z.coerce.date().optional().nullable(),
+        mobile: z.string().max(255).optional().or(z.literal("")),
+        email: z.string().email().max(255).optional().or(z.literal("")),
+      })
+    )
+    .max(6)
+    .optional(),
 });
 
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

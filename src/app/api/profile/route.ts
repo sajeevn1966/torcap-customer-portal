@@ -86,6 +86,40 @@ export async function PATCH(req: NextRequest) {
     // column is for.
     const lastModifiedBy = `${existing.name ?? "Customer"} - Portal`.slice(0, 50);
 
+    // Family members: update the ones that have an id, create the new ones,
+    // and soft-delete (is_deleted) any existing member no longer in the list.
+    if (input.familyMembers) {
+      const members = input.familyMembers.filter((m) => (m.name ?? "").trim() !== "");
+      const current = await prisma.posCustomerFamilyMember.findMany({
+        where: { posCustomerId: BigInt(customerId), isDeleted: false },
+        select: { id: true },
+      });
+      const currentIds = new Set(current.map((c) => c.id.toString()));
+      const keepIds = new Set(members.filter((m) => m.id).map((m) => m.id!.toString()));
+      const ops = [
+        ...current
+          .filter((c) => !keepIds.has(c.id.toString()))
+          .map((c) => prisma.posCustomerFamilyMember.update({ where: { id: c.id }, data: { isDeleted: true } })),
+        ...members.map((m, i) => {
+          const data = {
+            memberOrder: i + 1,
+            name: m.name!.trim(),
+            relationshipId: m.relationshipId ?? null,
+            dateOfBirth: m.dateOfBirth ?? null,
+            anniversaryDate: m.anniversaryDate ?? null,
+            mobile: emptyToNull(m.mobile),
+            email: emptyToNull(m.email),
+          };
+          return m.id && currentIds.has(m.id.toString())
+            ? prisma.posCustomerFamilyMember.update({ where: { id: m.id }, data })
+            : prisma.posCustomerFamilyMember.create({
+                data: { ...data, posCustomerId: BigInt(customerId), isDeleted: false },
+              });
+        }),
+      ];
+      await prisma.$transaction(ops);
+    }
+
     const customer = await prisma.posCustomer.update({
       where: { id: BigInt(customerId) },
       data: {
@@ -102,6 +136,30 @@ export async function PATCH(req: NextRequest) {
         documentIssuingCountryId: input.documentIssuingCountryId,
         dateOfBirth: input.dateOfBirth,
         language: emptyToNull(input.language),
+        alternateContactNumber: emptyToNull(input.alternateContactNumber),
+        contactViaWhatsapp: input.contactViaWhatsapp,
+        contactViaSms: input.contactViaSms,
+        contactViaCall: input.contactViaCall,
+        contactViaEmail: input.contactViaEmail,
+        preferredJewelryId: input.preferredJewelryId,
+        preferredKaratId: input.preferredKaratId,
+        preferredStyleId: input.preferredStyleId,
+        ringSize: input.ringSize,
+        bangleSize: input.bangleSize,
+        customerTypeId: input.customerTypeId,
+        customerGradeId: input.customerGradeId,
+        personaId: input.personaId,
+        leadSourceId: input.leadSourceId,
+        consentService: input.consentService,
+        consentMarketing: input.consentMarketing,
+        preferredBranchId: input.preferredBranchId,
+        goldRateAlert: input.goldRateAlert,
+        goldRateAlertMode: input.goldRateAlert === false ? null : input.goldRateAlertMode || undefined,
+        weeklyNotificationMail: input.weeklyNotificationMail,
+        anniversaryDate: input.anniversaryDate,
+        spouseName: emptyToNull(input.spouseName),
+        genderId: input.genderId,
+        maritalStatusId: input.maritalStatusId,
         ...(countryCode !== undefined ? { countryCode } : {}),
         lastModifiedBy,
         lastModifiedDate: new Date(),
