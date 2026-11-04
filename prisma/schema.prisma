@@ -755,6 +755,15 @@ model SpecialAttribute {
   @@map("special_attribute")
 }
 
+// Receipt mode shown in the scheme installment history (e.g. "MAST").
+// Table/columns assumed: payment_mode(id, code, name) - verify on the DB.
+model PaymentMode {
+  id   BigInt  @id @default(autoincrement())
+  code String? @db.VarChar(255)
+  name String? @db.VarChar(255)
+  @@map("payment_mode")
+}
+
 model PosCustomerFamilyMember {
   id              BigInt    @id @default(autoincrement())
   posCustomerId   BigInt    @map("pos_customer_id")
