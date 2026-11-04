@@ -57,9 +57,9 @@ export default async function SchemeDetailPage({ params }: { params: { id: strin
           </div>
         </div>
         <InfoCard label="Monthly Installment" value={formatCurrency(registration.scheme.installmentAmount, currencyCode)} />
-        <InfoCard label="Total Paid So Far" value={formatCurrency(registration.totalPaidAmount, currencyCode)} />
+        <InfoCard label="Total Paid So Far" value={formatCurrency((registration.totalPaidAmount ?? 0) + (registration.openingAmount ?? 0), currencyCode)} />
         <InfoCard label="Extra Amount Paid" value={formatCurrency(extraPaid, currencyCode)} />
-        <InfoCard label="Total Weight" value={fmtWeight(registration.totalFixedWeight)} />
+        <InfoCard label="Total Weight" value={fmtWeight((registration.totalFixedWeight ?? 0) + (registration.openingWeight ?? 0))} />
         <InfoCard label="Bonus Weight" value={fmtWeight(registration.bonusWeightFixed)} />
         <InfoCard label="Total Bonus Accrued" value={formatCurrency(registration.totalBonus, currencyCode)} />
         <InfoCard label="Registration Date" value={formatDate(registration.registrationDate)} />
