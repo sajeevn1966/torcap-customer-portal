@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionCustomerId } from "@/lib/session";
 import SchemeCard from "@/components/SchemeCard";
 import EmptyState from "@/components/EmptyState";
-import { formatCurrency, formatDate, nextInstallmentDueDate, currencySign } from "@/lib/format";
+import { formatCurrency, formatDate, currencySign } from "@/lib/format";
 import { deriveSchemeStatus } from "@/lib/scheme-status";
 
 export const dynamic = "force-dynamic";
@@ -84,18 +84,6 @@ export default async function OverviewPage() {
   const activeSchemes = registrations.filter((r) => deriveSchemeStatus(r) === "ACTIVE");
   const readyToRedeem = registrations.filter((r) => deriveSchemeStatus(r) === "MATURED");
 
-  const nextInstallments = activeSchemes
-    .map((r) => ({
-      registration: r,
-      due: nextInstallmentDueDate(r.firstInstallmentDate, r.noOfInstallmentsPaid, r.scheme.noOfInstallments),
-    }))
-    .filter((x): x is { registration: (typeof activeSchemes)[number]; due: Date } => x.due !== null)
-    .sort((a, b) => a.due.getTime() - b.due.getTime());
-
-  const nextInstallment = nextInstallments[0];
-  const nextInstallmentCurrency = nextInstallment?.registration.branch?.currency?.code ?? null;
-  const nextInstallmentSign = currencySign(nextInstallment?.registration.branch?.currency);
-
   // Recent Activity merges all five transaction sources — Scheme
   // installments, Retail Sale invoices, Old Gold Sale vouchers, Sales
   // Orders, and Advance Receipts — into one feed sorted by date, rather
@@ -169,7 +157,7 @@ export default async function OverviewPage() {
         </div>
       </section>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           label="Total Paid In"
           value={formatCurrency(totalPaidIn, homeCurrencyCode)}
@@ -195,23 +183,6 @@ export default async function OverviewPage() {
             <>
               <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.7" />
               <path d="M12 7.5v5l3.5 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-            </>
-          }
-        />
-        <StatCard
-          label="Next Installment"
-          value={
-            nextInstallment
-              ? formatCurrency(nextInstallment.registration.scheme.installmentAmount, nextInstallmentCurrency)
-              : "—"
-          }
-          sub={nextInstallment ? `Due ${formatDate(nextInstallment.due)}` : "No Upcoming Due Date"}
-          tone="teal"
-          badgeText={nextInstallmentSign}
-          icon={
-            <>
-              <rect x="3.5" y="5" width="17" height="16" rx="2" stroke="currentColor" strokeWidth="1.7" />
-              <path d="M3.5 9.5h17M8 3v3.5M16 3v3.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
             </>
           }
         />
