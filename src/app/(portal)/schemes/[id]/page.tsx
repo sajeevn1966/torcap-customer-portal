@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSessionCustomerId } from "@/lib/session";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, daysUntil, nextInstallmentDueDate } from "@/lib/format";
 import { deriveSchemeStatus } from "@/lib/scheme-status";
 import Link from "next/link";
 import EmptyState from "@/components/EmptyState";
@@ -92,6 +92,15 @@ export default async function SchemeDetailPage({ params }: { params: { id: strin
     REDEEMED: "bg-white/90 text-ink-700",
     CANCELLED: "bg-red-100 text-red-700",
   };
+  // Next due = first installment date + one month per installment already paid
+  // (only for running schemes). A past date is shown as overdue.
+  const nextDue =
+    lifecycleStatus === "ACTIVE"
+      ? nextInstallmentDueDate(registration.firstInstallmentDate, registration.noOfInstallmentsPaid, total)
+      : null;
+  const dueDays = nextDue ? daysUntil(nextDue) : null;
+  const dueNote =
+    dueDays === null ? null : dueDays < 0 ? `Overdue By ${Math.abs(dueDays)} Day${Math.abs(dueDays) === 1 ? "" : "s"}` : dueDays === 0 ? "Due Today" : `In ${dueDays} Day${dueDays === 1 ? "" : "s"}`;
   const showRedeemed = lifecycleStatus === "REDEEMED" && registration.redeemedPosInvoiceId != null;
 
   return (
@@ -137,6 +146,8 @@ export default async function SchemeDetailPage({ params }: { params: { id: strin
           <HeroItem label="Final Due Date" value={formatDate(registration.finalInstallmentDueDate)} />
           {showRedeemed ? (
             <HeroItem label="Redeemed On" value={formatDate(registration.redeemedOn)} />
+          ) : nextDue ? (
+            <HeroItem label="Next Due Date" value={formatDate(nextDue)} note={dueNote} alert={dueDays !== null && dueDays < 0} />
           ) : (
             <HeroItem label="Progress" value={`${pct}%`} />
           )}
@@ -279,11 +290,14 @@ export default async function SchemeDetailPage({ params }: { params: { id: strin
   );
 }
 
-function HeroItem({ label, value }: { label: string; value: string }) {
+function HeroItem({ label, value, note, alert }: { label: string; value: string; note?: string | null; alert?: boolean }) {
   return (
     <div className="rounded-2xl bg-white/10 px-4 py-3 backdrop-blur-sm">
       <dt className="text-[11px] font-medium uppercase tracking-wider text-white/70">{label}</dt>
       <dd className="mt-1 text-base font-semibold">{value}</dd>
+      {note && (
+        <p className={`mt-0.5 text-[11px] font-semibold ${alert ? "text-red-200" : "text-white/75"}`}>{note}</p>
+      )}
     </div>
   );
 }
