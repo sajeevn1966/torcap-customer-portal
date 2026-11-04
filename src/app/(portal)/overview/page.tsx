@@ -80,7 +80,7 @@ export default async function OverviewPage() {
   const homeCurrencyCode = customer.branch?.currency?.code ?? null;
   const homeCurrencySign = currencySign(customer.branch?.currency);
 
-  const totalPaidIn = registrations.reduce((sum, r) => sum + (r.totalPaidAmount ?? 0), 0);
+  const totalPaidIn = registrations.reduce((sum, r) => sum + Math.max(r.totalPaidAmount ?? 0, r.openingAmount ?? 0), 0);
   const activeSchemes = registrations.filter((r) => deriveSchemeStatus(r) === "ACTIVE");
   const readyToRedeem = registrations.filter((r) => deriveSchemeStatus(r) === "MATURED");
 

@@ -78,7 +78,11 @@ export default async function SchemeDetailPage({ params }: { params: { id: strin
   const lifecycleStatus = deriveSchemeStatus(registration);
   const statusLabel = lifecycleStatus === "MATURED" ? "Ready To Redeem" : lifecycleStatus;
 
-  const totalWeight = (registration.totalFixedWeight ?? 0) + (registration.bonusWeightFixed ?? 0);
+  // The stored totals already include the opening figures once a receipt exists;
+  // before any receipt they can still be 0 while the opening values are set.
+  const effPaid = Math.max(registration.totalPaidAmount ?? 0, registration.openingAmount ?? 0);
+  const effFixedWeight = Math.max(registration.totalFixedWeight ?? 0, registration.openingWeight ?? 0);
+  const totalWeight = effFixedWeight + (registration.bonusWeightFixed ?? 0);
   const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
   const sum = (f: (li: (typeof rows)[number]["li"]) => number | null | undefined) =>
     rows.reduce((t, r) => t + (f(r.li) ?? 0), 0);
@@ -142,14 +146,14 @@ export default async function SchemeDetailPage({ params }: { params: { id: strin
       {/* Payments & Gold */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <StatGroup title="Payments" accent="green">
-          <Stat label="Total Paid So Far" value={formatCurrency(registration.totalPaidAmount, currencyCode)} big />
+          <Stat label="Total Paid So Far" value={formatCurrency(effPaid, currencyCode)} big />
           <Stat label="Extra Amount Paid" value={formatCurrency(extraPaid, currencyCode)} />
           <Stat label="Total Bonus Accrued" value={fmtMoney3(registration.totalBonus, currencyCode)} />
         </StatGroup>
         <StatGroup title="Gold" accent="gold">
           <Stat label="Total Weight" value={fmtWeight(totalWeight)} big />
           <Stat label="Bonus Weight" value={fmtWeight(registration.bonusWeightFixed)} />
-          <Stat label="Fixed Weight" value={fmtWeight(registration.totalFixedWeight)} />
+          <Stat label="Fixed Weight" value={fmtWeight(effFixedWeight)} />
         </StatGroup>
       </div>
 
