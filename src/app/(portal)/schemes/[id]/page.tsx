@@ -30,6 +30,12 @@ export default async function SchemeDetailPage({ params }: { params: { id: strin
   const paid = registration.noOfInstallmentsPaid ?? 0;
   const total = registration.scheme.noOfInstallments;
   const currencyCode = registration.branch?.currency?.code;
+  // Extra Amount Paid = anything paid above (monthly installment x installments paid).
+  const extraPaid = Math.max(
+    0,
+    Math.round(((registration.totalPaidAmount ?? 0) - registration.scheme.installmentAmount * paid) * 100) / 100
+  );
+  const fmtWeight = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${v.toFixed(3)} g`);
   const lifecycleStatus = deriveSchemeStatus(registration);
   const statusLabel = lifecycleStatus === "MATURED" ? "Ready To Redeem" : lifecycleStatus;
 
@@ -52,10 +58,14 @@ export default async function SchemeDetailPage({ params }: { params: { id: strin
         </div>
         <InfoCard label="Monthly Installment" value={formatCurrency(registration.scheme.installmentAmount, currencyCode)} />
         <InfoCard label="Total Paid So Far" value={formatCurrency(registration.totalPaidAmount, currencyCode)} />
+        <InfoCard label="Extra Amount Paid" value={formatCurrency(extraPaid, currencyCode)} />
+        <InfoCard label="Total Weight" value={fmtWeight(registration.totalFixedWeight)} />
+        <InfoCard label="Bonus Weight" value={fmtWeight(registration.bonusWeightFixed)} />
+        <InfoCard label="Total Bonus Accrued" value={formatCurrency(registration.totalBonus, currencyCode)} />
         <InfoCard label="Registration Date" value={formatDate(registration.registrationDate)} />
         <InfoCard label="Final Due Date" value={formatDate(registration.finalInstallmentDueDate)} />
         <InfoCard label="Status" value={statusLabel} />
-        {lifecycleStatus === "REDEEMED" && <InfoCard label="Redeemed On" value={formatDate(registration.redeemedOn)} />}
+        {lifecycleStatus === "REDEEMED" && registration.redeemedPosInvoiceId != null && <InfoCard label="Redeemed On" value={formatDate(registration.redeemedOn)} />}
       </div>
 
       <section>
