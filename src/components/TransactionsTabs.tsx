@@ -253,7 +253,7 @@ function SchemeTab({ rows }: { rows: SchemeReceiptRow[] }) {
       {rows.map((r) => (
         <div
           key={r.id}
-          className="flex flex-col gap-3 rounded-2xl border border-ink-100 bg-white p-5 shadow-card transition hover:-translate-y-0.5 hover:shadow-md dark:border-surface-border dark:bg-surface-raised sm:flex-row sm:items-center sm:justify-between"
+          className="flex flex-col gap-3 overflow-hidden rounded-2xl border border-l-4 border-ink-100 border-l-brand-500 bg-white p-5 shadow-card transition hover:-translate-y-0.5 hover:shadow-lg dark:border-surface-border dark:border-l-brand-400 dark:bg-surface-raised sm:flex-row sm:items-center sm:justify-between"
         >
           <div>
             <p className="text-sm font-semibold text-ink-900 dark:text-ink-100">Receipt {r.voucherNo}</p>
@@ -264,7 +264,7 @@ function SchemeTab({ rows }: { rows: SchemeReceiptRow[] }) {
             {r.remarks && <p className="mt-1 text-xs text-ink-300 dark:text-ink-500">{r.remarks}</p>}
           </div>
           <div className="text-right">
-            <p className="text-base font-semibold text-ink-900 dark:text-ink-100">
+            <p className="text-lg font-semibold text-brand-600 dark:text-brand-300">
               {formatCurrency(r.amount, r.currencyCode)}
             </p>
             {r.paymentSummary && <p className="text-xs text-ink-500 dark:text-ink-300">{r.paymentSummary}</p>}
@@ -324,12 +324,12 @@ function InvoiceTab({
           key={invoice.id}
           className="overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-card transition hover:-translate-y-0.5 hover:shadow-md dark:border-surface-border dark:bg-surface-raised"
         >
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink-100 bg-brand-50/60 px-5 py-3 dark:border-surface-border dark:bg-surface">
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-gradient-to-r from-brand-500 to-brand-700 px-5 py-3.5 text-white">
             <div>
-              <p className="text-sm font-semibold text-ink-900 dark:text-ink-100">
+              <p className="text-sm font-semibold">
                 {label} {invoice.invoiceNumber}
               </p>
-              <p className="text-xs text-ink-500 dark:text-ink-300">
+              <p className="text-xs text-white/80">
                 {formatDate(invoice.invoiceDate)}
                 {invoice.salesPersonName && (
                   <>
@@ -339,7 +339,7 @@ function InvoiceTab({
                 )}
               </p>
             </div>
-            <p className="text-sm font-semibold text-ink-900 dark:text-ink-100">
+            <p className="rounded-full bg-white/15 px-3 py-1 text-sm font-semibold">
               {formatCurrency(invoice.grandTotal, invoice.currencyCode)}
             </p>
           </div>
@@ -351,7 +351,7 @@ function InvoiceTab({
               <col className="w-[20%]" />
               <col className="w-[20%]" />
             </colgroup>
-            <thead className="text-xs uppercase tracking-wide text-ink-300 dark:text-ink-500">
+            <thead className="bg-brand-50/60 text-xs uppercase tracking-wide text-ink-500 dark:bg-surface dark:text-ink-300">
               <tr>
                 <th className="px-5 py-2 font-medium">Product</th>
                 <th className="px-5 py-2 font-medium">Material</th>
@@ -410,16 +410,16 @@ function OjpTab({ rows }: { rows: OjpRow[] }) {
       />
     );
   return (
-    <div className="overflow-hidden rounded-2xl border border-ink-100 dark:border-surface-border">
+    <div className="overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-card dark:border-surface-border dark:bg-surface-raised">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[560px] text-left text-sm">
-          <thead className="bg-brand-50/60 text-xs uppercase tracking-wide text-ink-500 dark:bg-surface-raised dark:text-ink-300">
+          <thead className="bg-brand-600 text-[11px] uppercase tracking-wider text-white">
             <tr>
-              <th className="px-4 py-3 font-medium">Invoice</th>
-              <th className="px-4 py-3 font-medium">Date</th>
-              <th className="px-4 py-3 font-medium">Salesman</th>
-              <th className="px-4 py-3 text-right font-medium">Weight</th>
-              <th className="px-4 py-3 text-right font-medium">Amount</th>
+              <th className="px-4 py-3 font-semibold">Invoice</th>
+              <th className="px-4 py-3 font-semibold">Date</th>
+              <th className="px-4 py-3 font-semibold">Salesman</th>
+              <th className="px-4 py-3 text-right font-semibold">Weight</th>
+              <th className="px-4 py-3 text-right font-semibold">Amount</th>
             </tr>
           </thead>
           <tbody>
@@ -430,7 +430,7 @@ function OjpTab({ rows }: { rows: OjpRow[] }) {
                   idx % 2 === 1 ? "bg-brand-50/20 dark:bg-surface-raised/40" : ""
                 }`}
               >
-                <td className="px-4 py-3 font-medium text-ink-900 dark:text-ink-100">{r.voucherNumber}</td>
+                <td className="px-4 py-3 font-semibold text-brand-600 dark:text-brand-300">{r.voucherNumber}</td>
                 <td className="px-4 py-3 text-ink-500 dark:text-ink-300">{formatDate(r.voucherDate)}</td>
                 <td className="px-4 py-3 text-ink-500 dark:text-ink-300">{r.salesPersonName ?? "—"}</td>
                 <td className="px-4 py-3 text-right text-ink-500 dark:text-ink-300">{formatWeight(r.weight)}</td>
@@ -461,16 +461,16 @@ function AdvanceReceiptTab({ rows }: { rows: AdvanceReceiptRow[] }) {
       />
     );
   return (
-    <div className="overflow-hidden rounded-2xl border border-ink-100 dark:border-surface-border">
+    <div className="overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-card dark:border-surface-border dark:bg-surface-raised">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[560px] text-left text-sm">
-          <thead className="bg-brand-50/60 text-xs uppercase tracking-wide text-ink-500 dark:bg-surface-raised dark:text-ink-300">
+          <thead className="bg-brand-600 text-[11px] uppercase tracking-wider text-white">
             <tr>
-              <th className="px-4 py-3 font-medium">Receipt</th>
-              <th className="px-4 py-3 font-medium">Date</th>
-              <th className="px-4 py-3 font-medium">Salesman</th>
-              <th className="px-4 py-3 text-right font-medium">Balance</th>
-              <th className="px-4 py-3 text-right font-medium">Amount</th>
+              <th className="px-4 py-3 font-semibold">Receipt</th>
+              <th className="px-4 py-3 font-semibold">Date</th>
+              <th className="px-4 py-3 font-semibold">Salesman</th>
+              <th className="px-4 py-3 text-right font-semibold">Balance</th>
+              <th className="px-4 py-3 text-right font-semibold">Amount</th>
             </tr>
           </thead>
           <tbody>
@@ -481,7 +481,7 @@ function AdvanceReceiptTab({ rows }: { rows: AdvanceReceiptRow[] }) {
                   idx % 2 === 1 ? "bg-brand-50/20 dark:bg-surface-raised/40" : ""
                 }`}
               >
-                <td className="px-4 py-3 font-medium text-ink-900 dark:text-ink-100">{r.receiptNumber}</td>
+                <td className="px-4 py-3 font-semibold text-brand-600 dark:text-brand-300">{r.receiptNumber}</td>
                 <td className="px-4 py-3 text-ink-500 dark:text-ink-300">{formatDate(r.receiptDate)}</td>
                 <td className="px-4 py-3 text-ink-500 dark:text-ink-300">{r.salesPersonName ?? "—"}</td>
                 <td className="px-4 py-3 text-right text-ink-500 dark:text-ink-300">
