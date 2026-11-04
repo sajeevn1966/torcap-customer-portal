@@ -155,14 +155,19 @@ export default async function OverviewPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="font-display text-2xl font-semibold text-ink-900 dark:text-ink-100">
-          Welcome Back, {customer.name?.split(" ")[0] ?? "there"}
-        </h1>
-        <p className="mt-1 text-sm text-ink-500 dark:text-ink-300">
-          Here&apos;s Where Things Stand Across Your Schemes And Recent Visits To The Store.
-        </p>
-      </div>
+      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-500 via-brand-600 to-brand-800 p-6 text-white shadow-card sm:p-8">
+        <div aria-hidden className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/10" />
+        <div aria-hidden className="pointer-events-none absolute -bottom-20 right-24 h-40 w-40 rounded-full bg-gold-400/20" />
+        <div className="relative">
+          <p className="text-xs font-semibold uppercase tracking-widest text-white/70">Overview</p>
+          <h1 className="font-display mt-1 text-3xl font-semibold">
+            Welcome Back, {customer.name?.split(" ")[0] ?? "there"}
+          </h1>
+          <p className="mt-1 text-sm text-white/80">
+            Here&apos;s Where Things Stand Across Your Schemes And Recent Visits To The Store.
+          </p>
+        </div>
+      </section>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard
@@ -276,7 +281,7 @@ export default async function OverviewPage() {
             }
           />
         ) : (
-          <div className="overflow-hidden rounded-2xl border border-ink-100 dark:border-surface-border">
+          <div className="overflow-hidden rounded-2xl border border-ink-100 bg-white shadow-card dark:border-surface-border dark:bg-surface-raised">
             {activity.map((item, idx) => (
               <div
                 key={item.id}
@@ -399,8 +404,15 @@ function StatCard({
     teal: "bg-teal-50 text-teal-600 dark:bg-teal-900/20 dark:text-teal-300",
     purple: "bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-300",
   };
+  const barStyles: Record<typeof tone, string> = {
+    brand: "bg-brand-500",
+    amber: "bg-gold-400",
+    teal: "bg-teal-500",
+    purple: "bg-purple-500",
+  };
   return (
-    <div className="group rounded-2xl border border-ink-100 bg-white p-4 shadow-card transition hover:-translate-y-0.5 hover:shadow-md dark:border-surface-border dark:bg-surface-raised">
+    <div className="group relative overflow-hidden rounded-2xl border border-ink-100 bg-white p-4 pt-5 shadow-card transition hover:-translate-y-1 hover:shadow-lg dark:border-surface-border dark:bg-surface-raised">
+      <div aria-hidden className={`absolute inset-x-0 top-0 h-1.5 ${barStyles[tone]}`} />
       <span className={`flex h-9 w-9 items-center justify-center rounded-full transition-transform group-hover:scale-105 ${toneStyles[tone]}`}>
         {badgeText ? (
           <span className={badgeText.length <= 2 ? "text-base font-bold leading-none" : "text-[10px] font-bold tracking-tight"}>
