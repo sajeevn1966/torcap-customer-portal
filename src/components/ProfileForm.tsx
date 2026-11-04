@@ -345,8 +345,9 @@ function Select({
 }
 
 const sectionClass =
-  "rounded-2xl border border-ink-100 bg-white p-5 shadow-card dark:border-surface-border dark:bg-surface-raised";
-const sectionTitleClass = "mb-4 text-sm font-semibold uppercase tracking-wide text-ink-300 dark:text-ink-500";
+  "overflow-hidden rounded-2xl border border-ink-100 border-t-4 border-t-brand-500 bg-white p-5 shadow-card dark:border-surface-border dark:border-t-brand-400 dark:bg-surface-raised sm:p-6";
+const sectionTitleClass =
+  "mb-5 flex items-center gap-2 text-sm font-semibold uppercase tracking-widest text-brand-600 before:h-4 before:w-1 before:rounded-full before:bg-gold-400 dark:text-brand-300";
 
 export default function ProfileForm({
   customer,
@@ -550,10 +551,8 @@ export default function ProfileForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Read-only identity — per requirement, name/mobile are view-only */}
-      <section className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card dark:border-surface-border dark:bg-surface-raised">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-ink-300 dark:text-ink-500">
-          Account
-        </h2>
+      <section className={sectionClass}>
+        <h2 className={sectionTitleClass}>Account</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Name">
             <input className={inputClass} value={customer.name ?? ""} disabled />
@@ -565,10 +564,8 @@ export default function ProfileForm({
       </section>
 
       {/* Contact */}
-      <section className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card dark:border-surface-border dark:bg-surface-raised">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-ink-300 dark:text-ink-500">
-          Contact
-        </h2>
+      <section className={sectionClass}>
+        <h2 className={sectionTitleClass}>Contact</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="WhatsApp Number *" htmlFor="whatsappNumber">
             <input
@@ -610,10 +607,8 @@ export default function ProfileForm({
       </section>
 
       {/* Identification */}
-      <section className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card dark:border-surface-border dark:bg-surface-raised">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-ink-300 dark:text-ink-500">
-          Identification
-        </h2>
+      <section className={sectionClass}>
+        <h2 className={sectionTitleClass}>Identification</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="ID Type" htmlFor="idCardType">
             <select
@@ -672,10 +667,8 @@ export default function ProfileForm({
       </section>
 
       {/* Address */}
-      <section className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card dark:border-surface-border dark:bg-surface-raised">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-ink-300 dark:text-ink-500">
-          Address
-        </h2>
+      <section className={sectionClass}>
+        <h2 className={sectionTitleClass}>Address</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <Field label="Address" htmlFor="address">
@@ -949,10 +942,8 @@ export default function ProfileForm({
       </section>
 
       {/* Preferences */}
-      <section className="rounded-2xl border border-ink-100 bg-white p-5 shadow-card dark:border-surface-border dark:bg-surface-raised">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-ink-300 dark:text-ink-500">
-          Preferences
-        </h2>
+      <section className={sectionClass}>
+        <h2 className={sectionTitleClass}>Preferences</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Language" htmlFor="language">
             <select
@@ -998,7 +989,7 @@ export default function ProfileForm({
         <button
           type="submit"
           disabled={saving}
-          className="rounded-xl bg-brand-500 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-xl bg-gradient-to-b from-brand-500 to-brand-600 px-8 py-3 text-sm font-semibold text-white shadow-md shadow-brand-500/30 transition hover:from-brand-600 hover:to-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saving ? "Saving…" : "Save Changes"}
         </button>

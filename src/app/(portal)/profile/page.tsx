@@ -69,12 +69,22 @@ export default async function ProfilePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-2xl font-semibold text-ink-900 dark:text-ink-100">Profile</h1>
-        <p className="mt-1 text-sm text-ink-500 dark:text-ink-300">
-          View And Update Your Account Details.
-        </p>
-      </div>
+      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-500 via-brand-600 to-brand-800 p-6 text-white shadow-card sm:p-8">
+        <div aria-hidden className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/10" />
+        <div aria-hidden className="pointer-events-none absolute -bottom-20 right-24 h-40 w-40 rounded-full bg-gold-400/20" />
+        <div className="relative flex items-center gap-4">
+          <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-white/20 text-2xl font-semibold ring-2 ring-white/40">
+            {(customer.name ?? "?").trim().charAt(0).toUpperCase()}
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-widest text-white/70">My Profile</p>
+            <h1 className="font-display truncate text-3xl font-semibold">{customer.name ?? "Profile"}</h1>
+            <p className="mt-0.5 text-sm text-white/80">
+              {[customer.code, customer.mobile].filter(Boolean).join(" · ") || "View And Update Your Account Details."}
+            </p>
+          </div>
+        </div>
+      </section>
 
       <ProfileForm
         customer={{
